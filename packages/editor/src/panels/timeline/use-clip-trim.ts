@@ -80,7 +80,7 @@ export function useClipTrim(clip: Clip, track: Track, pixelsPerFrame: number) {
     if (g.edge === 'start') {
       runtime.actions.edit.trimClipToEdge(g.clip.id, 'start', Math.round(preview.start));
     } else {
-      runtime.actions.edit.trimClipToEdge(g.clip.id, 'end', sequenceEndFrame(preview));
+      runtime.actions.edit.trimClipToEdge(g.clip.id, 'end', sequenceEndFrame(preview, g.clip.speed));
     }
   };
 

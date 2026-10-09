@@ -66,6 +66,7 @@ export const AUDIO_EFFECT_KINDS = [
   'compressor',
   'noise-gate',
   'limiter',
+  'pitch',
 ] as const;
 export type AudioEffectKind = (typeof AUDIO_EFFECT_KINDS)[number];
 
@@ -81,7 +82,38 @@ export type AudioEffect =
       readonly releaseMs: number;
     }
   | { readonly kind: 'noise-gate'; readonly thresholdDb: number }
-  | { readonly kind: 'limiter'; readonly ceilingDb: number };
+  | { readonly kind: 'limiter'; readonly ceilingDb: number }
+  /** −100 is one octave down, 0 is unchanged, 100 is one octave up. */
+  | { readonly kind: 'pitch'; readonly amount: number };
+
+/** Playback-rate ratio for a pitch amount in the −100..100 range. */
+export function pitchRatioFromAmount(amount: number): number {
+  const clamped = Math.max(-100, Math.min(100, amount));
+  if (clamped === 0) return 1;
+  return 2 ** (clamped / 100);
+}
+
+/**
+ * How much of the pitch shifter to hear. ±1 is only a few cents, and the
+ * shifter colors the sound as soon as it leaves bypass, so those first steps
+ * stay on the dry signal. The shift fades in by about half a semitone.
+ */
+export function pitchWetMix(amount: number): number {
+  const distance = Math.abs(Math.max(-100, Math.min(100, amount)));
+  if (distance <= 1) return 0;
+  if (distance >= 6) return 1;
+  const t = (distance - 1) / 5;
+  return t * t * (3 - 2 * t);
+}
+
+/** Last pitch effect on the clip, or 0 when pitch is unchanged. */
+export function clipPitchAmount(effects: readonly AudioEffect[]): number {
+  let amount = 0;
+  for (const effect of effects) {
+    if (effect.kind === 'pitch') amount = effect.amount;
+  }
+  return Math.max(-100, Math.min(100, amount));
+}
 
 export interface ClipEffects {
   readonly video: readonly VideoEffect[];

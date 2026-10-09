@@ -3,6 +3,7 @@ import {
   clipTransitionPaint,
   cssFilterFromVideoEffects,
   effectiveClipOpacityPercent,
+  evaluateClipTransform,
   libraryEffectClipPath,
   libraryEffectTransform,
   type ActiveVideoClip,
@@ -59,10 +60,14 @@ export function programClipWrapperStyle(
   boxWidth: number,
   boxHeight: number,
 ): CSSProperties {
-  const t = clip.transform;
+  const t = evaluateClipTransform(clip, sequenceFrame);
   const seq = sequence.resolution;
   const px = frameWidth > 0 ? (t.positionX / seq.width) * frameWidth : 0;
   const py = frameHeight > 0 ? (t.positionY / seq.height) * frameHeight : 0;
+  const ax = frameWidth > 0 ? (t.anchorX / seq.width) * frameWidth : 0;
+  const ay = frameHeight > 0 ? (t.anchorY / seq.height) * frameHeight : 0;
+  const sx = t.scaleX / 100;
+  const sy = t.scaleY / 100;
   const paint = clipTransitionPaint(clip, sequenceFrame);
   const filter = [cssFilterFromVideoEffects(clip.effects.video), paint.filter].filter(Boolean).join(' ');
   const effectPath = clipPathFromVideoEffects(clip.effects.video) ?? libraryEffectClipPath(clip.effects.video);
@@ -73,9 +78,10 @@ export function programClipWrapperStyle(
     top: '50%',
     width: boxWidth,
     height: boxHeight,
-    transform: `translate(-50%, -50%) translate(${px}px, ${py}px) rotate(${t.rotation}deg) scale(${t.scaleX / 100}, ${t.scaleY / 100})${extraTransform ? ` ${extraTransform}` : ''}`,
+    transform: `translate(-50%, -50%) translate(${px}px, ${py}px) translate(${ax * sx}px, ${ay * sy}px) rotate(${t.rotation}deg) scale(${sx}, ${sy}) translate(${-ax}px, ${-ay}px)${extraTransform ? ` ${extraTransform}` : ''}`,
     transformOrigin: 'center center',
     opacity: effectiveClipOpacityPercent(clip, sequenceFrame, sequence) / 100,
+    ...(t.blendMode !== 'normal' ? { mixBlendMode: t.blendMode } : {}),
     ...(filter ? { filter } : {}),
     ...(clipPath ? { clipPath, overflow: 'hidden' as const } : {}),
   };

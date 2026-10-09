@@ -58,12 +58,24 @@ export interface ClipTrimState {
   readonly previews: readonly ClipTrimPreview[];
 }
 
+export type MarqueeOwner = 'timeline' | 'media';
+
+export interface MarqueeBounds {
+  readonly left: number;
+  readonly top: number;
+  readonly right: number;
+  readonly bottom: number;
+}
+
 export interface MarqueeState {
+  readonly owner: MarqueeOwner;
   readonly startX: number;
   readonly startY: number;
   readonly currentX: number;
   readonly currentY: number;
   readonly additive: boolean;
+  /** Section rectangle. The drawn box is clipped to this. */
+  readonly bounds: MarqueeBounds;
 }
 
 export interface ConfirmRequest {

@@ -1,5 +1,6 @@
 import { createId } from '@timeline/shared';
 import { type FrameRate, type MediaTime } from '../time/rational';
+import { EMPTY_CLIP_ANIMATION } from './animation';
 import { type ClipText } from './text';
 import {
   CURRENT_SCHEMA_VERSION,
@@ -168,7 +169,9 @@ export function createClip(options: CreateClipOptions): Clip {
     start: options.start,
     sourceIn: options.sourceIn,
     sourceOut: options.sourceOut,
+    speed: 100,
     transform: DEFAULT_CLIP_TRANSFORM,
+    animation: EMPTY_CLIP_ANIMATION,
     audio: DEFAULT_CLIP_AUDIO,
     transitions: DEFAULT_CLIP_TRANSITIONS,
     effects: DEFAULT_CLIP_EFFECTS,

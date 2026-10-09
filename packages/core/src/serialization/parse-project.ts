@@ -12,6 +12,7 @@ import {
   type EffectRegion,
   type VideoEffect,
 } from '../model/effects';
+import { clipSpeedPercent } from '../model/speed';
 import {
   DEFAULT_CLIP_TEXT,
   TEXT_ANIMATION_IDS,
@@ -19,7 +20,17 @@ import {
   type TextShadow,
 } from '../model/text';
 import {
+  EMPTY_CLIP_ANIMATION,
+  MOTION_CHANNELS,
+  type AnimatedChannel,
+  type ClipAnimation,
+  type KeyframeInterpolation,
+  type ScalarKeyframe,
+} from '../model/animation';
+import {
+  BLEND_MODES,
   type AudioTrack,
+  type BlendMode,
   type Clip,
   type ClipId,
   type ClipTransform,
@@ -140,7 +151,14 @@ function parseClipTransform(value: unknown, path: string): ClipTransform {
   }
   const uniformScale =
     transform.uniformScale === undefined ? true : readBoolean(transform, 'uniformScale', path);
-  return { positionX, positionY, scaleX, scaleY, uniformScale, rotation, opacity };
+  const anchorX = typeof transform.anchorX === 'number' && Number.isFinite(transform.anchorX) ? transform.anchorX : 0;
+  const anchorY = typeof transform.anchorY === 'number' && Number.isFinite(transform.anchorY) ? transform.anchorY : 0;
+  const blendMode = parseBlendMode(transform.blendMode);
+  return { positionX, positionY, scaleX, scaleY, uniformScale, rotation, opacity, anchorX, anchorY, blendMode };
+}
+
+function parseBlendMode(value: unknown): BlendMode {
+  return typeof value === 'string' && (BLEND_MODES as readonly string[]).includes(value) ? (value as BlendMode) : 'normal';
 }
 
 function parseClipEdgeTransition(value: unknown, path: string): ClipEdgeTransition | null {
@@ -233,6 +251,7 @@ function parseAudioEffect(value: unknown, path: string): AudioEffect {
     'compressor',
     'noise-gate',
     'limiter',
+    'pitch',
   ]);
   switch (kind) {
     case 'gain':
@@ -252,6 +271,8 @@ function parseAudioEffect(value: unknown, path: string): AudioEffect {
       return { kind, thresholdDb: readNumber(obj, 'thresholdDb', path) };
     case 'limiter':
       return { kind, ceilingDb: readNumber(obj, 'ceilingDb', path) };
+    case 'pitch':
+      return { kind, amount: Math.max(-100, Math.min(100, readNumber(obj, 'amount', path))) };
     default:
       throw invalid(path, 'a supported audio effect');
   }
@@ -307,6 +328,41 @@ function parseClipText(value: unknown, path: string): ClipText {
   };
 }
 
+function parseKeyframe(value: unknown, path: string): ScalarKeyframe {
+  const obj = readObject(value, path);
+  const interpolation = readString(obj, 'interpolation', path);
+  if (interpolation !== 'linear' && interpolation !== 'hold') {
+    throw invalid(path, 'a linear or hold keyframe');
+  }
+  return {
+    id: readString(obj, 'id', path),
+    frame: readInteger(obj, 'frame', path),
+    value: readNumber(obj, 'value', path),
+    interpolation: interpolation as KeyframeInterpolation,
+  };
+}
+
+function parseAnimatedChannel(value: unknown, path: string): AnimatedChannel {
+  const obj = readObject(value, path);
+  return {
+    enabled: readBoolean(obj, 'enabled', path),
+    keyframes: readArray(obj.keyframes, `${path}.keyframes`).map((key, index) =>
+      parseKeyframe(key, `${path}.keyframes[${index}]`),
+    ),
+  };
+}
+
+function parseClipAnimation(value: unknown): ClipAnimation {
+  if (value == null) return EMPTY_CLIP_ANIMATION;
+  const obj = readObject(value, 'animation');
+  const animation: ClipAnimation = {};
+  for (const id of MOTION_CHANNELS) {
+    if (obj[id] == null) continue;
+    animation[id] = parseAnimatedChannel(obj[id], `animation.${id}`);
+  }
+  return animation;
+}
+
 function parseClip(value: unknown, path: string): Clip {
   const obj = readObject(value, path);
   const audio = readObject(obj.audio, `${path}.audio`);
@@ -321,7 +377,9 @@ function parseClip(value: unknown, path: string): Clip {
     start: readInteger(obj, 'start', path),
     sourceIn: readInteger(obj, 'sourceIn', path),
     sourceOut: readInteger(obj, 'sourceOut', path),
+    speed: obj.speed == null ? 100 : clipSpeedPercent(readNumber(obj, 'speed', path)),
     transform: parseClipTransform(obj.transform, `${path}.transform`),
+    animation: parseClipAnimation(obj.animation),
     audio: {
       volume: readNumber(audio, 'volume', `${path}.audio`),
       muted: readBoolean(audio, 'muted', `${path}.audio`),

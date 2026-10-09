@@ -1,9 +1,11 @@
 import {
   audioEffectGainDb,
+  clipPitchAmount,
   clipTransitionAudioMultiplier,
   combinedClipTrackLinearGain,
   effectiveClipLinearGain,
   findTrack,
+  playbackRateForSpeed,
   type Clip,
   type ClipId,
   type MediaAssetId,
@@ -11,6 +13,7 @@ import {
 } from '@timeline/core';
 import { type MediaHandle } from '@timeline/media';
 import { sourceTimeForFrame } from './frame-math';
+import { GrainPitchShift } from './grain-pitch';
 
 const SEEK_EPSILON = 0.06;
 const DRIFT_WHILE_PLAYING = 0.2;
@@ -26,6 +29,7 @@ interface AudioLane {
   readonly gate: GainNode;
   readonly gateAnalyser: AnalyserNode;
   readonly limiter: DynamicsCompressorNode;
+  readonly pitch: GrainPitchShift;
   readonly gain: GainNode;
   readonly panner: StereoPannerNode;
   fxKey: string;
@@ -108,6 +112,8 @@ function applyAudioChain(lane: AudioLane, clip: Clip): void {
     link(lane.gate);
     lane.gate.gain.value = 1;
   }
+  node.connect(lane.pitch.input);
+  node = lane.pitch.output;
   if (hasLimiter) link(lane.limiter);
   node.connect(lane.gain);
 }
@@ -189,6 +195,7 @@ export class ProgramAudioMixer {
       const gateAnalyser = ctx.createAnalyser();
       gateAnalyser.fftSize = 256;
       const limiter = ctx.createDynamicsCompressor();
+      const pitch = new GrainPitchShift(ctx);
       const gain = ctx.createGain();
       const panner = ctx.createStereoPanner();
       highpass.type = 'highpass';
@@ -206,6 +213,7 @@ export class ProgramAudioMixer {
         gate,
         gateAnalyser,
         limiter,
+        pitch,
         gain,
         panner,
         fxKey: '',
@@ -219,6 +227,7 @@ export class ProgramAudioMixer {
   #removeLane(clipId: ClipId): void {
     const lane = this.#lanes.get(clipId);
     if (!lane) return;
+    lane.pitch.dispose();
     lane.element.pause();
     lane.element.removeAttribute('src');
     lane.element.load();
@@ -258,6 +267,7 @@ export class ProgramAudioMixer {
       }
 
       applyAudioChain(lane, clip);
+      lane.pitch.setAmount(clipPitchAmount(clip.effects.audio));
       if (this.#timeDomain) updateNoiseGate(lane, clip, this.#timeDomain);
       const { linear, pan } = laneGain(sequence, clip, frame);
       lane.gain.gain.value = Math.max(0, linear);
@@ -265,12 +275,17 @@ export class ProgramAudioMixer {
 
       const seconds = sourceTimeForFrame(clip, frame, sequence.frameRate);
       const el = lane.element;
+      const rate = playbackRateForSpeed(clip.speed);
+      const rateChanged = Math.abs(el.playbackRate - rate) > 0.001;
+      if (rateChanged) el.playbackRate = rate;
+      el.preservesPitch = true;
+      const drift = DRIFT_WHILE_PLAYING * Math.max(1, rate);
 
       if (playing) {
-        if (el.paused) {
+        if (el.paused || rateChanged) {
           if (Math.abs(el.currentTime - seconds) >= SEEK_EPSILON) el.currentTime = seconds;
-          void el.play().catch(() => undefined);
-        } else if (Math.abs(el.currentTime - seconds) > DRIFT_WHILE_PLAYING) {
+          if (el.paused) void el.play().catch(() => undefined);
+        } else if (Math.abs(el.currentTime - seconds) > drift) {
           el.currentTime = seconds;
         }
       } else {

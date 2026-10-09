@@ -14,7 +14,7 @@ import {
 
 import { type MediaPlayer } from '@timeline/media';
 
-import { Button, EmptyState, PanelFrame, Scrubber } from '@timeline/ui';
+import { Button, EmptyState, Scrubber } from '@timeline/ui';
 
 import { AudioLines, ListPlus, MonitorPlay } from 'lucide-react';
 
@@ -304,7 +304,7 @@ export function SourceMonitor() {
 
   return (
 
-    <PanelFrame title={asset ? `Source: ${asset.name}` : 'Source'}>
+    <div className="flex h-full min-h-0 min-w-0 flex-col">
 
       <div className="relative flex min-h-0 flex-1 items-center justify-center bg-black">
 
@@ -432,7 +432,7 @@ export function SourceMonitor() {
 
       </div>
 
-    </PanelFrame>
+    </div>
 
   );
 

@@ -2,6 +2,7 @@ export * from './time/rational';
 export * from './time/timecode';
 
 export * from './model/types';
+export * from './model/animation';
 export * from './model/defaults';
 export * from './audio/gain';
 export * from './model/factory';
@@ -14,6 +15,7 @@ export * from './operations/clip-effects';
 export * from './operations/clip-transitions-edit';
 export * from './operations/tracks';
 export * from './model/effects';
+export * from './model/speed';
 export * from './model/text';
 export * from './render/text-animation';
 export * from './model/transition-resolve';

@@ -25,6 +25,9 @@ export const DEFAULT_CLIP_TRANSFORM: ClipTransform = {
   uniformScale: true,
   rotation: 0,
   opacity: 100,
+  anchorX: 0,
+  anchorY: 0,
+  blendMode: 'normal',
 };
 
 export const DEFAULT_CLIP_AUDIO: ClipAudio = {

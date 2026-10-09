@@ -3,7 +3,7 @@ import { DEFAULT_KEYMAP, type Keymap } from '../commands/commands';
 import { useKeyboardShortcuts } from '../commands/use-keyboard-shortcuts';
 import { InspectorPanel } from '../panels/inspector/InspectorPanel';
 import { ProgramMonitor } from '../panels/monitors/ProgramMonitor';
-import { SourceMonitor } from '../panels/monitors/SourceMonitor';
+import { SourcePanel } from '../panels/monitors/SourcePanel';
 import { ProjectPanel } from '../panels/project/ProjectPanel';
 import { TimelinePanel } from '../panels/timeline/TimelinePanel';
 import { type EditorRuntime } from '../runtime/create-runtime';
@@ -27,7 +27,7 @@ function Workspace({ runtime, keymap = DEFAULT_KEYMAP }: EditorProps) {
           <ResizablePanel id="top" defaultSize="52%" minSize={160}>
             <ResizableGroup orientation="horizontal" storageId="workspace-top">
               <ResizablePanel id="source" defaultSize="30%" minSize={220}>
-                <SourceMonitor />
+                <SourcePanel />
               </ResizablePanel>
               <ResizableHandle orientation="horizontal" />
               <ResizablePanel id="program" defaultSize="45%" minSize={260}>

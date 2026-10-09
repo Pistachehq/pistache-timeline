@@ -1,4 +1,4 @@
-import { type Clip, type FrameRate, getAssetFrameCount, type Track } from '@timeline/core';
+import { type Clip, type FrameRate, getAssetFrameCount, timelineFrameCount, type Track } from '@timeline/core';
 import { cn } from '@timeline/ui';
 import { Link2Off } from 'lucide-react';
 import { memo } from 'react';
@@ -49,7 +49,7 @@ export const ClipItem = memo(function ClipItem({
   const isVideo = track.kind === 'video';
   const sourceIn = trimPreview?.sourceIn ?? clip.sourceIn;
   const sourceOut = trimPreview?.sourceOut ?? clip.sourceOut;
-  const duration = sourceOut - sourceIn;
+  const duration = timelineFrameCount(Math.max(0, sourceOut - sourceIn), clip.speed);
   const start = drag?.start ?? trimPreview?.start ?? clip.start;
   const width = Math.max(2, duration * pixelsPerFrame);
   const assetFrameCount = asset && sequence ? getAssetFrameCount(asset, sequence) : 0;

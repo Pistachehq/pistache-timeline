@@ -2,6 +2,7 @@ import {
   addClip,
   addTextClip,
   addTrack,
+  applyMotionEdit,
   type Clip,
   type ClipAudio,
   type ClipId,
@@ -18,14 +19,23 @@ import {
   updateSequence,
   type MediaAssetId,
   moveClip,
+  moveKeyframe,
+  moveKeyframes,
+  setClipSpeed,
   newClipId,
   type Project,
   removeClips,
   renameProject,
   type Sequence,
+  resetMotionChannel,
   setClipEnabled,
+  setKeyframeInterpolation,
+  setMotionChannelEnabled,
   splitClip,
+  toggleKeyframeAtFrame,
   trimClip,
+  type KeyframeInterpolation,
+  type MotionChannelId,
   type TrackChanges,
   type TrackId,
   type TrackKind,
@@ -33,7 +43,6 @@ import {
   updateClipAudio,
   updateClipEffects,
   updateClipText,
-  updateClipTransform,
   updateClipTransitions,
   updateTrack,
   type ClipEffects,
@@ -434,8 +443,78 @@ export function createEditActions(services: EditorServices) {
     },
 
     setClipTransform(clipId: ClipId, transform: Partial<ClipTransform>, label = 'Change Transform'): boolean {
-      return run(label, (project, sequence) =>
-        updateClipTransform(project, { sequenceId: sequence.id, clipId, transform }),
+      return run(label, (project, sequence) => {
+        const clip = sequence.clips[clipId];
+        if (!clip) return ok(project);
+        return applyMotionEdit(project, {
+          sequenceId: sequence.id,
+          clipId,
+          transform,
+          localFrame: playback.getState().playhead - clip.start,
+        });
+      });
+    },
+
+    setMotionAnimated(clipId: ClipId, channel: MotionChannelId, enabled: boolean): boolean {
+      return run(enabled ? 'Enable Animation' : 'Disable Animation', (project, sequence) => {
+        const clip = sequence.clips[clipId];
+        if (!clip) return ok(project);
+        return setMotionChannelEnabled(project, {
+          sequenceId: sequence.id,
+          clipId,
+          channel,
+          enabled,
+          localFrame: playback.getState().playhead - clip.start,
+        });
+      });
+    },
+
+    toggleKeyframe(clipId: ClipId, channel: MotionChannelId, localFrame?: number): boolean {
+      return run('Edit Keyframe', (project, sequence) => {
+        const clip = sequence.clips[clipId];
+        if (!clip) return ok(project);
+        return toggleKeyframeAtFrame(project, {
+          sequenceId: sequence.id,
+          clipId,
+          channel,
+          localFrame: localFrame ?? playback.getState().playhead - clip.start,
+        });
+      });
+    },
+
+    moveMotionKeyframe(clipId: ClipId, channel: MotionChannelId, keyframeId: string, frame: number): boolean {
+      return run('Move Keyframe', (project, sequence) =>
+        moveKeyframe(project, { sequenceId: sequence.id, clipId, channel, keyframeId, frame }),
+      );
+    },
+
+    moveMotionKeyframes(
+      clipId: ClipId,
+      moves: readonly { channel: MotionChannelId; keyframeId: string; frame: number }[],
+    ): boolean {
+      return run('Move Keyframes', (project, sequence) =>
+        moveKeyframes(project, { sequenceId: sequence.id, clipId, moves }),
+      );
+    },
+
+    setClipSpeed(clipId: ClipId, speed: number): boolean {
+      return run('Change Speed', (project, sequence) => setClipSpeed(project, { sequenceId: sequence.id, clipId, speed }));
+    },
+
+    setMotionInterpolation(
+      clipId: ClipId,
+      channel: MotionChannelId,
+      keyframeId: string,
+      interpolation: KeyframeInterpolation,
+    ): boolean {
+      return run('Change Keyframe', (project, sequence) =>
+        setKeyframeInterpolation(project, { sequenceId: sequence.id, clipId, channel, keyframeId, interpolation }),
+      );
+    },
+
+    resetMotion(clipId: ClipId, channel: MotionChannelId): boolean {
+      return run('Reset Property', (project, sequence) =>
+        resetMotionChannel(project, { sequenceId: sequence.id, clipId, channel }),
       );
     },
 

@@ -2,6 +2,7 @@ import {
   canvasFilterFromVideoEffects,
   clipTransitionPaint,
   effectiveClipOpacityPercent,
+  evaluateClipTransform,
   libraryEffectClipPath,
   libraryEffectTransform,
   textAnimationFrame,
@@ -9,8 +10,29 @@ import {
   type ActiveVideoClip,
   type Clip,
   type ClipText,
+  type ClipTransform,
   type Sequence,
 } from '@timeline/core';
+
+/** Position, anchor, rotation, and scale. Anchor 0 keeps the previous centre pivot. */
+function applyClipMotion(
+  ctx: CanvasRenderingContext2D,
+  t: ClipTransform,
+  originX: number,
+  originY: number,
+  seqScaleX: number,
+  seqScaleY: number,
+  scaleIncludesSequence: boolean,
+): void {
+  if (t.blendMode !== 'normal') ctx.globalCompositeOperation = t.blendMode;
+  const clipSx = t.scaleX / 100;
+  const clipSy = t.scaleY / 100;
+  ctx.translate(originX, originY);
+  ctx.translate(t.anchorX * seqScaleX * clipSx, t.anchorY * seqScaleY * clipSy);
+  ctx.rotate((t.rotation * Math.PI) / 180);
+  ctx.scale(scaleIncludesSequence ? clipSx * seqScaleX : clipSx, scaleIncludesSequence ? clipSy * seqScaleY : clipSy);
+  ctx.translate(scaleIncludesSequence ? -t.anchorX : -t.anchorX * seqScaleX, scaleIncludesSequence ? -t.anchorY : -t.anchorY * seqScaleY);
+}
 
 function applyExtraTransform(ctx: CanvasRenderingContext2D, transform: string): void {
   if (!transform) return;
@@ -109,11 +131,9 @@ export function drawProgramFrame(
   const { width: vw, height: vh } = sourceDimensions(source);
   if (vw <= 0 || vh <= 0) return;
 
-  const t = clip.transform;
+  const t = evaluateClipTransform(clip, clip.start);
   ctx.save();
-  ctx.translate(width / 2 + t.positionX * scaleX, height / 2 + t.positionY * scaleY);
-  ctx.rotate((t.rotation * Math.PI) / 180);
-  ctx.scale(t.scaleX / 100, t.scaleY / 100);
+  applyClipMotion(ctx, t, width / 2 + t.positionX * scaleX, height / 2 + t.positionY * scaleY, scaleX, scaleY, false);
   ctx.globalAlpha = t.opacity / 100;
 
   const fit = Math.min(width / vw, height / vh);
@@ -139,13 +159,11 @@ function drawTextClip(
   const anim = textAnimationFrame(text.content, text.animation, progress);
   const scaleX = width / sequence.resolution.width;
   const scaleY = height / sequence.resolution.height;
-  const t = clip.transform;
+  const t = evaluateClipTransform(clip, sequenceFrame);
   const paint = clipTransitionPaint(clip, sequenceFrame);
   const filter = [canvasFilterFromVideoEffects(clip.effects.video), paint.filter].filter(Boolean).join(' ');
   ctx.save();
-  ctx.translate(width / 2 + t.positionX * scaleX, height / 2 + t.positionY * scaleY);
-  ctx.rotate((t.rotation * Math.PI) / 180);
-  ctx.scale((t.scaleX / 100) * scaleX, (t.scaleY / 100) * scaleY);
+  applyClipMotion(ctx, t, width / 2 + t.positionX * scaleX, height / 2 + t.positionY * scaleY, scaleX, scaleY, true);
   applyExtraTransform(ctx, [libraryEffectTransform(clip.effects.video), paint.transform].filter(Boolean).join(' '));
   ctx.globalAlpha = effectiveClipOpacityPercent(clip, sequenceFrame, sequence) / 100;
   if (filter) ctx.filter = filter;
@@ -221,14 +239,12 @@ export async function drawStackedProgramFrame(
     const { sequence } = options;
     const scaleX = width / sequence.resolution.width;
     const scaleY = height / sequence.resolution.height;
-    const t = clip.transform;
+    const t = evaluateClipTransform(clip, sequenceFrame);
     const paint = clipTransitionPaint(clip, sequenceFrame);
     const filter = [canvasFilterFromVideoEffects(clip.effects.video), paint.filter].filter(Boolean).join(' ');
     const clipPath = paint.clipPath ?? libraryEffectClipPath(clip.effects.video);
     ctx.save();
-    ctx.translate(width / 2 + t.positionX * scaleX, height / 2 + t.positionY * scaleY);
-    ctx.rotate((t.rotation * Math.PI) / 180);
-    ctx.scale(t.scaleX / 100, t.scaleY / 100);
+    applyClipMotion(ctx, t, width / 2 + t.positionX * scaleX, height / 2 + t.positionY * scaleY, scaleX, scaleY, false);
     applyExtraTransform(ctx, [libraryEffectTransform(clip.effects.video), paint.transform].filter(Boolean).join(' '));
     ctx.globalAlpha = effectiveClipOpacityPercent(clip, sequenceFrame, sequence) / 100;
     if (filter) ctx.filter = filter;

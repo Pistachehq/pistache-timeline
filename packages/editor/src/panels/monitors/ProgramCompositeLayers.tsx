@@ -1,6 +1,7 @@
 import {
   cssBlurFilter,
   findTrack,
+  playbackRateForSpeed,
   getBlurVideoEffect,
   getStackedVideoClipsAt,
   insetClipPathFromRegion,
@@ -58,13 +59,18 @@ function syncStackVideos(
     if (!asset || asset.kind === 'image' || !asset.hasVideo) continue;
 
     el.muted = true;
+    const rate = playbackRateForSpeed(clip.speed);
+    const rateChanged = Math.abs(el.playbackRate - rate) > 0.001;
+    if (rateChanged) el.playbackRate = rate;
+    el.preservesPitch = true;
     const seconds = sourceTimeForFrame(clip, playhead, sequence.frameRate);
+    const drift = PLAYBACK_DRIFT * Math.max(1, rate);
 
     if (playing) {
-      if (el.paused) {
+      if (el.paused || rateChanged) {
         if (Math.abs(el.currentTime - seconds) >= SEEK_EPSILON) el.currentTime = seconds;
-        void el.play().catch(() => undefined);
-      } else if (Math.abs(el.currentTime - seconds) > PLAYBACK_DRIFT) {
+        if (el.paused) void el.play().catch(() => undefined);
+      } else if (Math.abs(el.currentTime - seconds) > drift) {
         el.currentTime = seconds;
       }
     } else {

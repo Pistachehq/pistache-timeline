@@ -1,4 +1,5 @@
 import { MAX_STILL_IMAGE_TIMELINE_SECONDS } from './defaults';
+import { timelineFrameCount } from './speed';
 import { isCrossDissolveTransition } from './transition-resolve';
 import { mediaTimeToFrames, secondsToFrames } from '../time/rational';
 import {
@@ -71,7 +72,7 @@ export function getClip(sequence: Sequence, clipId: ClipId): Clip | undefined {
 }
 
 export function getClipDuration(clip: Clip): number {
-  return clip.sourceOut - clip.sourceIn;
+  return timelineFrameCount(clip.sourceOut - clip.sourceIn, clip.speed);
 }
 
 /** Exclusive end frame of the clip on the sequence. */

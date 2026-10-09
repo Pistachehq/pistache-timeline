@@ -3,6 +3,7 @@ import {
   type Clip,
   type ClipAudio,
   type ClipTransform,
+  evaluateClipTransform,
   findTrack,
   formatDisplayTime,
   getClipDuration,
@@ -14,7 +15,7 @@ import {
 import { IconButton, NumberField } from '@timeline/ui';
 import { Link2, RotateCcw, Unlink2, Volume2, VolumeX } from 'lucide-react';
 import { useTimeDisplayFormat } from '../../hooks/use-format-display-time';
-import { useRuntime } from '../../runtime/context';
+import { usePlaybackState, useRuntime } from '../../runtime/context';
 import { useAsset } from '../../runtime/hooks';
 import { ClipCropInspector } from './ClipCropInspector';
 import { ClipTextInspector } from './ClipTextInspector';
@@ -47,10 +48,15 @@ const LABELS: Record<keyof ClipTransform, string> = {
   uniformScale: 'Change Scale',
   rotation: 'Change Rotation',
   opacity: 'Change Opacity',
+  anchorX: 'Change Anchor Point',
+  anchorY: 'Change Anchor Point',
+  blendMode: 'Change Blend Mode',
 };
 
 export function ClipInspector({ clip, sequence }: { clip: Clip; sequence: Sequence }) {
   const runtime = useRuntime();
+  const playhead = usePlaybackState((state) => state.playhead);
+  const motion = evaluateClipTransform(clip, playhead);
   const { edit } = runtime.actions;
   const asset = useAsset(clip.assetId);
   const track = findTrack(sequence, clip.trackId);
@@ -66,7 +72,7 @@ export function ClipInspector({ clip, sequence }: { clip: Clip; sequence: Sequen
     <NumberField
       key={spec.key}
       label={spec.label}
-      value={clip.transform[spec.key]}
+      value={motion[spec.key]}
       min={spec.min}
       max={spec.max}
       step={spec.step}
@@ -115,7 +121,7 @@ export function ClipInspector({ clip, sequence }: { clip: Clip; sequence: Sequen
                 <NumberField
                   className="flex-1"
                   label="Scale"
-                  value={clip.transform.scaleX}
+                  value={motion.scaleX}
                   {...TRANSFORM_LIMITS.scale}
                   step={0.5}
                   precision={1}
@@ -130,7 +136,7 @@ export function ClipInspector({ clip, sequence }: { clip: Clip; sequence: Sequen
                   <NumberField
                     className="flex-1"
                     label="Scale X"
-                    value={clip.transform.scaleX}
+                    value={motion.scaleX}
                     {...TRANSFORM_LIMITS.scale}
                     step={0.5}
                     precision={1}
@@ -143,7 +149,7 @@ export function ClipInspector({ clip, sequence }: { clip: Clip; sequence: Sequen
                   <NumberField
                     className="flex-1"
                     label="Scale Y"
-                    value={clip.transform.scaleY}
+                    value={motion.scaleY}
                     {...TRANSFORM_LIMITS.scale}
                     step={0.5}
                     precision={1}

@@ -8,8 +8,9 @@ import { type FrameRate, type MediaTime } from '../time/rational';
  *   sequence's frame rate. Frame 0 is the start of the sequence.
  * - `Clip.sourceIn` / `Clip.sourceOut` are integer frame offsets into the
  *   source media, also expressed in the sequence frame rate. The range is
- *   half-open: `[sourceIn, sourceOut)`, so the clip duration is
- *   `sourceOut - sourceIn` and is always > 0.
+ *   half-open: `[sourceIn, sourceOut)`. At 100% speed the clip occupies that
+ *   many frames on the sequence. Another speed plays the same source range
+ *   over a shorter or longer span (`getClipDuration`).
  * - Clips on the same track never overlap and `Track.clipIds` is ordered by
  *   `Clip.start`. Every clip belongs to exactly one track and its `trackId`
  *   matches that track.
@@ -82,6 +83,10 @@ export interface MediaAsset {
   readonly importedAt: string;
 }
 
+export const BLEND_MODES = ['normal', 'multiply', 'screen', 'overlay', 'darken', 'lighten'] as const;
+
+export type BlendMode = (typeof BLEND_MODES)[number];
+
 export interface ClipTransform {
   /** Offset from the frame centre, in sequence pixels. */
   readonly positionX: number;
@@ -96,6 +101,11 @@ export interface ClipTransform {
   readonly rotation: number;
   /** Opacity in percent, 0–100. */
   readonly opacity: number;
+  /** Point that scale and rotation pivot around, in sequence pixels from the frame centre. */
+  readonly anchorX: number;
+  readonly anchorY: number;
+  /** How this clip composites over the clips below it. */
+  readonly blendMode: BlendMode;
 }
 
 export interface ClipAudio {
@@ -133,7 +143,11 @@ export interface Clip {
   readonly sourceIn: number;
   /** Exclusive source out-point, in sequence frames. */
   readonly sourceOut: number;
+  /** Playback speed in percent. 100 is normal, 200 is twice as fast, 50 is half speed. */
+  readonly speed: number;
   readonly transform: ClipTransform;
+  /** Keyframed motion. Empty channels stay on the static transform. */
+  readonly animation: import('./animation').ClipAnimation;
   readonly audio: ClipAudio;
   readonly transitions: import('./effects').ClipTransitions;
   readonly effects: import('./effects').ClipEffects;
