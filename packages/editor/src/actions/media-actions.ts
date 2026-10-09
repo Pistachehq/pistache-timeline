@@ -1,11 +1,17 @@
 import {
   addMediaAssets,
+  assignImportedAssetsToBins,
   countAssetUsage,
   createMediaAsset,
+  createMediaBinFolder,
+  moveMediaAssetToFolder,
+  removeMediaBinFolder,
+  renameMediaBinFolder,
   getActiveSequence,
   getAssetFrameCount,
   type MediaAsset,
   type MediaAssetId,
+  type MediaBinFolderId,
   mediaTimeFromSeconds,
   type Project,
   relinkMediaAsset,
@@ -95,19 +101,31 @@ export function createMediaActions(services: EditorServices) {
     if (pickedFiles.length === 0 && failures.length === 0) return [];
 
     const task = ui.getState().startTask(`Importing ${pickedFiles.length} file(s)…`);
-    const imported: { asset: MediaAsset; handle: MediaHandle }[] = [];
+    const imported: { asset: MediaAsset; handle: MediaHandle; binPath: readonly string[] }[] = [];
     try {
       for (const picked of pickedFiles) {
         const metadata = await probe(picked);
         if (typeof metadata === 'string') failures.push(`${picked.source.fileName}: ${metadata}`);
-        else imported.push({ asset: assetFromProbe(picked, metadata), handle: picked.handle });
+        else
+          imported.push({
+            asset: assetFromProbe(picked, metadata),
+            handle: picked.handle,
+            binPath: picked.binPath,
+          });
       }
     } finally {
       ui.getState().endTask(task);
     }
 
     const assets = imported.map((entry) => entry.asset);
-    const result = projectStore.getState().apply(undoLabel, (project) => addMediaAssets(project, assets));
+    const result = projectStore.getState().apply(undoLabel, (project) => {
+      const added = addMediaAssets(project, assets);
+      if (!added.ok) return added;
+      return assignImportedAssetsToBins(
+        added.value,
+        imported.map((entry) => ({ assetId: entry.asset.id, binPath: entry.binPath })),
+      );
+    });
     if (!result.ok) {
       ui.getState().notify(result.error.message, 'error');
       return [];
@@ -245,6 +263,73 @@ export function createMediaActions(services: EditorServices) {
       markOnline(asset, picked.handle);
       ui.getState().notify(`Relinked ${asset.name}.`, 'success');
       return true;
+    },
+
+    createBinFolder(parentId: MediaBinFolderId | null = null): MediaBinFolderId | null {
+      const project = projectStore.getState().project;
+      const base = 'New Folder';
+      let name = base;
+      let n = 2;
+      const taken = new Set(
+        Object.values(project.mediaBinFolders)
+          .filter((f) => f.parentId === parentId)
+          .map((f) => f.name),
+      );
+      while (taken.has(name)) {
+        name = `${base} ${n}`;
+        n++;
+      }
+      const result = projectStore.getState().apply('Create Folder', (p) =>
+        createMediaBinFolder(p, { name, parentId }),
+      );
+      if (!result.ok) {
+        ui.getState().notify(result.error.message, 'error');
+        return null;
+      }
+      const created = Object.values(result.value.mediaBinFolders).find(
+        (f) => f.parentId === parentId && f.name === name,
+      );
+      return created?.id ?? null;
+    },
+
+    renameBinFolder(folderId: MediaBinFolderId, name: string): boolean {
+      const result = projectStore.getState().apply('Rename Folder', (p) => renameMediaBinFolder(p, folderId, name));
+      if (!result.ok) ui.getState().notify(result.error.message, 'error');
+      return result.ok;
+    },
+
+    async removeBinFolder(folderId: MediaBinFolderId): Promise<boolean> {
+      const folder = projectStore.getState().project.mediaBinFolders[folderId];
+      if (!folder) return false;
+      const confirmed = await ui.getState().confirm({
+        title: 'Delete folder?',
+        message: `“${folder.name}” will be removed. Clips inside move to the parent bin.`,
+        confirmLabel: 'Delete',
+      });
+      if (!confirmed) return false;
+      const result = projectStore.getState().apply('Remove Folder', (p) => removeMediaBinFolder(p, folderId));
+      if (!result.ok) ui.getState().notify(result.error.message, 'error');
+      return result.ok;
+    },
+
+    async promptRenameBinFolder(folderId: MediaBinFolderId): Promise<boolean> {
+      const folder = projectStore.getState().project.mediaBinFolders[folderId];
+      if (!folder) return false;
+      const name = await ui.getState().prompt({
+        title: 'Rename folder',
+        defaultValue: folder.name,
+        confirmLabel: 'Rename',
+      });
+      if (name === null) return false;
+      const result = projectStore.getState().apply('Rename Folder', (p) => renameMediaBinFolder(p, folderId, name));
+      if (!result.ok) ui.getState().notify(result.error.message, 'error');
+      return result.ok;
+    },
+
+    moveAssetToBin(assetId: MediaAssetId, folderId: MediaBinFolderId | null): boolean {
+      const result = projectStore.getState().apply('Move Media', (p) => moveMediaAssetToFolder(p, assetId, folderId));
+      if (!result.ok) ui.getState().notify(result.error.message, 'error');
+      return result.ok;
     },
 
     /** Removes an asset (and its clips) after confirmation when it is in use. */

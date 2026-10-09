@@ -17,7 +17,9 @@ export const DEFAULT_SEQUENCE_SETTINGS = {
 export const DEFAULT_CLIP_TRANSFORM: ClipTransform = {
   positionX: 0,
   positionY: 0,
-  scale: 100,
+  scaleX: 100,
+  scaleY: 100,
+  uniformScale: true,
   rotation: 0,
   opacity: 100,
 };
@@ -30,6 +32,9 @@ export const DEFAULT_CLIP_AUDIO: ClipAudio = {
 
 /** Default timeline length when an image is imported (seconds). */
 export const DEFAULT_STILL_IMAGE_DURATION_SECONDS = 5;
+
+/** Max timeline length for a still image when trimming the clip end (seconds). */
+export const MAX_STILL_IMAGE_TIMELINE_SECONDS = 24 * 3600;
 
 export const TRANSFORM_LIMITS = {
   position: { min: -100_000, max: 100_000 },

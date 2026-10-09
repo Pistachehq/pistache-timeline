@@ -12,13 +12,15 @@ import {
   volumePercentToDb,
 } from '@timeline/core';
 import { IconButton, NumberField } from '@timeline/ui';
-import { RotateCcw, Volume2, VolumeX } from 'lucide-react';
+import { Link2, RotateCcw, Unlink2, Volume2, VolumeX } from 'lucide-react';
 import { useTimeDisplayFormat } from '../../hooks/use-format-display-time';
 import { useRuntime } from '../../runtime/context';
 import { useAsset } from '../../runtime/hooks';
 import { InfoRow, InspectorSection } from './InspectorSection';
 
-interface FieldSpec<K extends string> {
+type NumericTransformKey = 'positionX' | 'positionY' | 'rotation' | 'opacity';
+
+interface FieldSpec<K extends NumericTransformKey> {
   key: K;
   label: string;
   min: number;
@@ -28,17 +30,18 @@ interface FieldSpec<K extends string> {
   unit?: string;
 }
 
-const MOTION_FIELDS: readonly FieldSpec<keyof ClipTransform>[] = [
+const MOTION_FIELDS: readonly FieldSpec<Exclude<NumericTransformKey, 'opacity'>>[] = [
   { key: 'positionX', label: 'Position X', ...TRANSFORM_LIMITS.position, step: 1, precision: 1, unit: 'px' },
   { key: 'positionY', label: 'Position Y', ...TRANSFORM_LIMITS.position, step: 1, precision: 1, unit: 'px' },
-  { key: 'scale', label: 'Scale', ...TRANSFORM_LIMITS.scale, step: 0.5, precision: 1, unit: '%' },
   { key: 'rotation', label: 'Rotation', ...TRANSFORM_LIMITS.rotation, step: 0.5, precision: 1, unit: '°' },
 ];
 
 const LABELS: Record<keyof ClipTransform, string> = {
   positionX: 'Change Position',
   positionY: 'Change Position',
-  scale: 'Change Scale',
+  scaleX: 'Change Scale',
+  scaleY: 'Change Scale',
+  uniformScale: 'Change Scale',
   rotation: 'Change Rotation',
   opacity: 'Change Opacity',
 };
@@ -56,7 +59,7 @@ export function ClipInspector({ clip, sequence }: { clip: Clip; sequence: Sequen
   const isAudioTrack = track?.kind === 'audio';
   const clipDb = volumePercentToDb(clip.audio.volume);
 
-  const transformField = (spec: FieldSpec<keyof ClipTransform>) => (
+  const transformField = (spec: FieldSpec<NumericTransformKey>) => (
     <NumberField
       key={spec.key}
       label={spec.label}
@@ -102,13 +105,88 @@ export function ClipInspector({ clip, sequence }: { clip: Clip; sequence: Sequen
         <>
           <InspectorSection title="Motion">
             {MOTION_FIELDS.map(transformField)}
+            <div className="flex items-end gap-1">
+              {clip.transform.uniformScale ? (
+                <NumberField
+                  className="flex-1"
+                  label="Scale"
+                  value={clip.transform.scaleX}
+                  {...TRANSFORM_LIMITS.scale}
+                  step={0.5}
+                  precision={1}
+                  unit="%"
+                  disabled={locked}
+                  onScrubStart={() => edit.beginTransaction('Change Scale')}
+                  onScrubEnd={() => edit.commitTransaction()}
+                  onChange={(value) => edit.setClipTransform(clip.id, { scaleX: value, scaleY: value }, 'Change Scale')}
+                />
+              ) : (
+                <>
+                  <NumberField
+                    className="flex-1"
+                    label="Scale X"
+                    value={clip.transform.scaleX}
+                    {...TRANSFORM_LIMITS.scale}
+                    step={0.5}
+                    precision={1}
+                    unit="%"
+                    disabled={locked}
+                    onScrubStart={() => edit.beginTransaction('Change Scale')}
+                    onScrubEnd={() => edit.commitTransaction()}
+                    onChange={(value) => edit.setClipTransform(clip.id, { scaleX: value }, 'Change Scale')}
+                  />
+                  <NumberField
+                    className="flex-1"
+                    label="Scale Y"
+                    value={clip.transform.scaleY}
+                    {...TRANSFORM_LIMITS.scale}
+                    step={0.5}
+                    precision={1}
+                    unit="%"
+                    disabled={locked}
+                    onScrubStart={() => edit.beginTransaction('Change Scale')}
+                    onScrubEnd={() => edit.commitTransaction()}
+                    onChange={(value) => edit.setClipTransform(clip.id, { scaleY: value }, 'Change Scale')}
+                  />
+                </>
+              )}
+              <IconButton
+                label={clip.transform.uniformScale ? 'Unlock uniform scale' : 'Lock uniform scale'}
+                icon={clip.transform.uniformScale ? <Link2 /> : <Unlink2 />}
+                pressed={clip.transform.uniformScale}
+                disabled={locked}
+                onClick={() =>
+                  edit.setClipTransform(
+                    clip.id,
+                    {
+                      uniformScale: !clip.transform.uniformScale,
+                      ...(clip.transform.uniformScale
+                        ? {}
+                        : { scaleX: clip.transform.scaleX, scaleY: clip.transform.scaleY }),
+                    },
+                    'Change Scale',
+                  )
+                }
+              />
+            </div>
             <div className="flex justify-end pt-1">
               <IconButton
                 label="Reset motion"
                 icon={<RotateCcw />}
                 disabled={locked}
                 onClick={() =>
-                  edit.setClipTransform(clip.id, { positionX: 0, positionY: 0, scale: 100, rotation: 0 }, 'Reset Motion')
+                  edit.setClipTransform(
+                    clip.id,
+                    {
+                      positionX: 0,
+                      positionY: 0,
+                      scaleX: 100,
+                      scaleY: 100,
+                      uniformScale: true,
+                      rotation: 0,
+                    },
+                    'Reset Motion',
+                  )
                 }
               />
             </div>

@@ -43,7 +43,7 @@ export function drawProgramFrame(
   ctx.save();
   ctx.translate(width / 2 + t.positionX * scaleX, height / 2 + t.positionY * scaleY);
   ctx.rotate((t.rotation * Math.PI) / 180);
-  ctx.scale(t.scale / 100, t.scale / 100);
+  ctx.scale(t.scaleX / 100, t.scaleY / 100);
   ctx.globalAlpha = t.opacity / 100;
 
   const fit = Math.min(width / vw, height / vh);
@@ -79,7 +79,7 @@ export function drawStackedProgramFrame(
     ctx.save();
     ctx.translate(width / 2 + t.positionX * scaleX, height / 2 + t.positionY * scaleY);
     ctx.rotate((t.rotation * Math.PI) / 180);
-    ctx.scale(t.scale / 100, t.scale / 100);
+    ctx.scale(t.scaleX / 100, t.scaleY / 100);
     ctx.globalAlpha = t.opacity / 100;
     const fit = Math.min(width / vw, height / vh);
     const dw = vw * fit;

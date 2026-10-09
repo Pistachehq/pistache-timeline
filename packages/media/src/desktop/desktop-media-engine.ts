@@ -68,6 +68,7 @@ export function createDesktopMediaEngine(bridge: DesktopMediaBridge): MediaEngin
             mimeType,
             path: file.path,
           },
+          binPath: [],
         });
       }
       return { files: picked, rejected };
@@ -108,6 +109,7 @@ export function createDesktopMediaEngine(bridge: DesktopMediaBridge): MediaEngin
             mimeType,
             path: desktopFile.path,
           },
+          binPath: [],
         });
       }
       return { files: picked, rejected };

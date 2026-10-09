@@ -35,7 +35,7 @@ describe('splittable clips', () => {
 });
 
 describe('audible clips', () => {
-  it('includes audio tracks and the topmost video clip', () => {
+  it('includes audio tracks and embedded audio on visible video tracks', () => {
     const { project, sequence, video, audio } = setupProject();
     const vTrack = sequence.videoTracks[0]!.id;
     const aTrack = sequence.audioTracks[0]!.id;

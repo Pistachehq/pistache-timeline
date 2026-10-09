@@ -1,4 +1,5 @@
 import { unwrap } from '@timeline/shared';
+import { DEFAULT_STILL_IMAGE_DURATION_SECONDS } from '../model/defaults';
 import { createMediaAsset, createProject } from '../model/factory';
 import { getActiveSequence } from '../model/queries';
 import { type MediaAsset, type MediaAssetId, type Project, type Sequence } from '../model/types';
@@ -21,6 +22,27 @@ export function videoAsset(id = 'asset_video', seconds = 10): MediaAsset {
     duration: mediaTimeFromSeconds(seconds),
     hasVideo: true,
     hasAudio: true,
+    resolution: { width: 1920, height: 1080 },
+    now: new Date('2026-01-01T00:00:00Z'),
+  });
+}
+
+export function imageAsset(id = 'asset_image', seconds = DEFAULT_STILL_IMAGE_DURATION_SECONDS): MediaAsset {
+  return createMediaAsset({
+    id: id as MediaAssetId,
+    name: 'Photo',
+    kind: 'image',
+    source: {
+      kind: 'local-file',
+      fileName: 'photo.png',
+      size: 256,
+      lastModified: 1_700_000_000_000,
+      mimeType: 'image/png',
+      path: null,
+    },
+    duration: mediaTimeFromSeconds(seconds),
+    hasVideo: true,
+    hasAudio: false,
     resolution: { width: 1920, height: 1080 },
     now: new Date('2026-01-01T00:00:00Z'),
   });

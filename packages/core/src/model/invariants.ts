@@ -34,8 +34,17 @@ export function validateProjectInvariants(project: Project): string[] {
   if (!project.sequences[project.activeSequenceId]) {
     issues.push(`active sequence ${project.activeSequenceId} does not exist`);
   }
+  for (const [folderId, folder] of Object.entries(project.mediaBinFolders)) {
+    if (folder.id !== folderId) issues.push(`media bin folder key ${folderId} does not match id ${folder.id}`);
+    if (folder.parentId !== null && !project.mediaBinFolders[folder.parentId]) {
+      issues.push(`media bin folder ${folderId} references missing parent ${folder.parentId}`);
+    }
+  }
   for (const [assetId, asset] of Object.entries(project.mediaAssets)) {
     if (asset.id !== assetId) issues.push(`media asset key ${assetId} does not match id ${asset.id}`);
+    if (asset.folderId !== null && !project.mediaBinFolders[asset.folderId]) {
+      issues.push(`media asset ${assetId} references missing bin folder ${asset.folderId}`);
+    }
     if (!isNonNegativeInteger(asset.duration.value) || !isPositiveInteger(asset.duration.timescale)) {
       issues.push(`media asset ${assetId} has an invalid duration`);
     }

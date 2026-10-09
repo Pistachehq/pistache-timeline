@@ -61,10 +61,19 @@ export interface ConfirmRequest {
   readonly resolve: (confirmed: boolean) => void;
 }
 
+export interface PromptRequest {
+  readonly title: string;
+  readonly message?: string;
+  readonly defaultValue: string;
+  readonly confirmLabel: string;
+  readonly resolve: (value: string | null) => void;
+}
+
 export type DialogState =
   | { readonly kind: 'export' }
   | { readonly kind: 'about' }
-  | { readonly kind: 'confirm'; readonly request: ConfirmRequest };
+  | { readonly kind: 'confirm'; readonly request: ConfirmRequest }
+  | { readonly kind: 'prompt'; readonly request: PromptRequest };
 
 export const DEFAULT_PIXELS_PER_FRAME = 2;
 
@@ -100,6 +109,7 @@ export interface UiState {
   closeDialog(): void;
   /** Shows a modal confirmation and resolves with the user's choice. */
   confirm(options: Omit<ConfirmRequest, 'resolve'>): Promise<boolean>;
+  prompt(options: Omit<PromptRequest, 'resolve'>): Promise<string | null>;
   notify(text: string, tone?: StatusTone): void;
   clearStatus(id: string): void;
   startTask(label: string): string;
@@ -144,12 +154,15 @@ export function createUiStore(): UiStore {
     closeDialog() {
       const { dialog } = get();
       if (dialog?.kind === 'confirm') dialog.request.resolve(false);
+      if (dialog?.kind === 'prompt') dialog.request.resolve(null);
       set({ dialog: null });
     },
 
     confirm(options) {
       return new Promise<boolean>((resolve) => {
-        if (get().dialog?.kind === 'confirm') get().closeDialog();
+        const open = get().dialog;
+        if (open?.kind === 'confirm') open.request.resolve(false);
+        if (open?.kind === 'prompt') open.request.resolve(null);
         const request: ConfirmRequest = {
           ...options,
           resolve: (confirmed) => {
@@ -158,6 +171,22 @@ export function createUiStore(): UiStore {
           },
         };
         set({ dialog: { kind: 'confirm', request } });
+      });
+    },
+
+    prompt(options) {
+      return new Promise<string | null>((resolve) => {
+        const open = get().dialog;
+        if (open?.kind === 'confirm') open.request.resolve(false);
+        if (open?.kind === 'prompt') open.request.resolve(null);
+        const request: PromptRequest = {
+          ...options,
+          resolve: (value) => {
+            set({ dialog: null });
+            resolve(value);
+          },
+        };
+        set({ dialog: { kind: 'prompt', request } });
       });
     },
 

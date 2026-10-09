@@ -27,6 +27,8 @@ export interface PickedMedia {
   readonly handle: MediaHandle;
   readonly kind: MediaKind;
   readonly source: MediaSourceRef;
+  /** Parent folder names from a directory import (excluding the file name). */
+  readonly binPath: readonly string[];
 }
 
 export interface RejectedMedia {

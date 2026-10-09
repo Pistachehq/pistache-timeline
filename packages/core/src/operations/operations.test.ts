@@ -3,7 +3,8 @@ import { describe, expect, it } from 'vitest';
 import { validateProjectInvariants } from '../model/invariants';
 import { getClipEnd, getSeamlessClipSuccessor, getSequenceDuration, getTopmostVideoClipAt } from '../model/queries';
 import { type ClipId, type MediaAssetId, type Project, type TrackId } from '../model/types';
-import { activeSequence, setupProject } from '../test/fixtures';
+import { createProject } from '../model/factory';
+import { activeSequence, imageAsset, setupProject } from '../test/fixtures';
 import {
   addClip,
   moveClip,
@@ -14,7 +15,7 @@ import {
   updateClipAudio,
   updateClipTransform,
 } from './clips';
-import { removeMediaAsset } from './media';
+import { addMediaAssets, removeMediaAsset } from './media';
 import { addTrack, updateTrack } from './tracks';
 
 const CLIP_A = 'clip_a' as ClipId;
@@ -151,6 +152,33 @@ describe('splitClip and removeClips', () => {
     expect(trimmedEnd.clips[CLIP_A]!.sourceOut).toBe(270);
   });
 
+  it('extends still image clips beyond the default import duration', () => {
+    const image = imageAsset();
+    const project = unwrap(
+      addMediaAssets(createProject({ now: new Date('2026-01-01T00:00:00Z') }), [image]),
+    );
+    const sequence = activeSequence(project);
+    const v1 = sequence.videoTracks[0]!.id;
+    const withClip = unwrap(
+      addClip(project, { sequenceId: sequence.id, trackId: v1, assetId: image.id, start: 0, clipId: CLIP_A }),
+    );
+    const placed = activeSequence(withClip).clips[CLIP_A]!;
+    expect(placed.sourceOut).toBe(150); // 5 s at 30 fps
+
+    const extended = activeSequence(
+      unwrap(
+        trimClip(withClip, {
+          sequenceId: sequence.id,
+          clipId: CLIP_A,
+          edge: 'end',
+          frame: 600,
+        }),
+      ),
+    );
+    expect(extended.clips[CLIP_A]!.sourceOut).toBe(600);
+    expect(getClipEnd(extended.clips[CLIP_A]!)).toBe(600);
+  });
+
   it('rejects split points on clip boundaries', () => {
     const { project } = withClip();
     const sequence = activeSequence(project);
@@ -210,12 +238,13 @@ describe('clip properties', () => {
     const { project } = withClip();
     const sequence = activeSequence(project);
     const next = unwrap(
-      updateClipTransform(project, { sequenceId: sequence.id, clipId: CLIP_A, transform: { positionX: 120, opacity: 150, scale: Number.NaN } }),
+      updateClipTransform(project, { sequenceId: sequence.id, clipId: CLIP_A, transform: { positionX: 120, opacity: 150, scaleX: Number.NaN } }),
     );
     const t = activeSequence(next).clips[CLIP_A]!.transform;
     expect(t.positionX).toBe(120);
     expect(t.opacity).toBe(100);
-    expect(t.scale).toBe(100);
+    expect(t.scaleX).toBe(100);
+    expect(t.scaleY).toBe(100);
   });
 
   it('updates audio properties and enabled state', () => {

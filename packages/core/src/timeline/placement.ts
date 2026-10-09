@@ -73,7 +73,9 @@ export interface SnapTargetOptions {
 export function collectSnapTargets(sequence: Sequence, options: SnapTargetOptions = {}): number[] {
   const targets = new Set<number>();
   if (options.includeSequenceStart !== false) targets.add(0);
-  if (options.playhead !== undefined && options.playhead >= 0) targets.add(options.playhead);
+  if (options.playhead !== undefined && options.playhead >= 0) {
+    targets.add(Math.round(options.playhead));
+  }
   const exclude = new Set(options.excludeClipIds ?? []);
   for (const clip of Object.values(sequence.clips)) {
     if (exclude.has(clip.id)) continue;
@@ -106,7 +108,7 @@ function pickSnap(
       guides.push(target);
     }
   }
-  return { frame: Math.max(0, best), guides: bestDist <= threshold ? guides : [] };
+  return { frame: Math.round(Math.max(0, best)), guides: bestDist <= threshold ? guides : [] };
 }
 
 /** Snaps a single frame (razor, playhead scrub…). */

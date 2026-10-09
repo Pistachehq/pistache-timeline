@@ -7,6 +7,7 @@ import { shortcutLabel } from '../../commands/commands';
 import { useElementSize } from '../../hooks/use-element-size';
 import { SequencePlaybackController } from '../../playback/sequence-playback';
 import { useTimeDisplayFormat } from '../../hooks/use-format-display-time';
+import { playbackDecodeFactor } from '../../playback/playback-decode';
 import { usePlaybackState, useRuntime, useUiState } from '../../runtime/context';
 import { useActiveSequence } from '../../runtime/hooks';
 import { type MonitorScale } from '../../state/ui-store';
@@ -70,7 +71,7 @@ export function ProgramMonitor() {
   const runtime = useRuntime();
   const sequence = useActiveSequence();
   const videoRef = useRef<HTMLVideoElement>(null);
-  const audioRef = useRef<HTMLAudioElement>(null);
+  const audioHostRef = useRef<HTMLDivElement>(null);
   const areaRef = useRef<HTMLDivElement>(null);
   const area = useElementSize(areaRef);
   const scale = useUiState((s) => s.programScale);
@@ -80,12 +81,12 @@ export function ProgramMonitor() {
   const frameRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const video = videoRef.current;
-    const audio = audioRef.current;
-    if (!video || !audio) return;
+    const audioHost = audioHostRef.current;
+    if (!video || !audioHost) return;
     const controller = new SequencePlaybackController(
       runtime,
       runtime.platform.media.createPlayer(video),
-      runtime.platform.media.createPlayer(audio),
+      audioHost,
     );
     return () => controller.dispose();
   }, [runtime]);
@@ -93,7 +94,7 @@ export function ProgramMonitor() {
   useEffect(() => {
     const video = videoRef.current;
     if (!video || !sequence) return;
-    const factor = Number(decodeScale);
+    const factor = playbackDecodeFactor(decodeScale);
     const w = Math.max(2, Math.round(sequence.resolution.width * factor));
     const h = Math.max(2, Math.round(sequence.resolution.height * factor));
     video.width = w;
@@ -130,7 +131,7 @@ export function ProgramMonitor() {
             data-testid="program-video"
           />
           {sequence ? <ProgramCompositeLayers sequence={sequence} /> : null}
-          <audio ref={audioRef} className="sr-only" aria-hidden tabIndex={-1} />
+          <div ref={audioHostRef} className="sr-only" aria-hidden />
         </div>
         <ProgramOverlay />
       </div>

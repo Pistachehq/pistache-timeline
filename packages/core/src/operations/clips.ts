@@ -1,7 +1,13 @@
 import { clamp, isFiniteNumber, isNonNegativeInteger, ok, type Result, type TimelineError } from '@timeline/shared';
 import { AUDIO_LIMITS, TRANSFORM_LIMITS } from '../model/defaults';
 import { createClip } from '../model/factory';
-import { findTrack, getAssetFrameCount, getClipDuration, getClipEnd } from '../model/queries';
+import {
+  findTrack,
+  getAssetFrameCount,
+  getClipDuration,
+  getClipEnd,
+  getMaxClipSourceOutFrames,
+} from '../model/queries';
 import {
   type Clip,
   type ClipAudio,
@@ -263,35 +269,36 @@ function trimClipInSequence(
   clipId: ClipId,
   edge: 'start' | 'end',
   frame: number,
-  assetFrameCount: number,
+  maxSourceOutFrames: number,
 ): Result<Sequence, TimelineError> {
   const clip = sequence.clips[clipId];
   if (!clip) return fail('NOT_FOUND', `Clip ${clipId} does not exist.`);
   const track = findTrack(sequence, clip.trackId);
   if (track?.locked) return fail('LOCKED', `Track ${track.name} is locked.`);
   const end = getClipEnd(clip);
-  if (!Number.isInteger(frame)) return fail('INVALID_ARGUMENT', 'Trim frame must be an integer.');
+  const trimFrame = Math.round(frame);
+  if (!Number.isFinite(trimFrame)) return fail('INVALID_ARGUMENT', 'Trim frame must be an integer.');
 
   let next: Clip;
   if (edge === 'start') {
     const minStart = Math.max(0, clip.start - clip.sourceIn);
-    if (frame < minStart || frame > end - MIN_CLIP_DURATION_FRAMES) {
+    if (trimFrame < minStart || trimFrame > end - MIN_CLIP_DURATION_FRAMES) {
       return fail('INVALID_ARGUMENT', 'Trim start must stay inside the clip and media bounds.');
     }
-    const delta = frame - clip.start;
+    const delta = trimFrame - clip.start;
     const sourceIn = clip.sourceIn + delta;
     if (sourceIn < 0 || sourceIn >= clip.sourceOut) {
       return fail('INVALID_ARGUMENT', 'Trim start exceeds the media duration.');
     }
-    next = { ...clip, start: frame, sourceIn };
+    next = { ...clip, start: trimFrame, sourceIn };
   } else {
     const minEnd = clip.start + MIN_CLIP_DURATION_FRAMES;
-    const maxEnd = clip.start + (assetFrameCount - clip.sourceIn);
-    if (frame < minEnd || frame > maxEnd) {
+    const maxEnd = clip.start + (maxSourceOutFrames - clip.sourceIn);
+    if (trimFrame < minEnd || trimFrame > maxEnd) {
       return fail('INVALID_ARGUMENT', 'Trim end must stay inside the clip and media bounds.');
     }
-    const sourceOut = clip.sourceIn + (frame - clip.start);
-    if (sourceOut <= clip.sourceIn || sourceOut > assetFrameCount) {
+    const sourceOut = clip.sourceIn + (trimFrame - clip.start);
+    if (sourceOut <= clip.sourceIn || sourceOut > maxSourceOutFrames) {
       return fail('INVALID_ARGUMENT', 'Trim end exceeds the media duration.');
     }
     next = { ...clip, sourceOut };
@@ -309,9 +316,9 @@ export function trimClip(project: Project, input: TrimClipInput): EditResult {
 
     const asset = project.mediaAssets[clip.assetId];
     if (!asset) return fail('NOT_FOUND', 'Media for this clip is missing.');
-    const available = getAssetFrameCount(asset, sequence);
+    const maxSourceOut = getMaxClipSourceOutFrames(asset, sequence);
 
-    const first = trimClipInSequence(sequence, input.clipId, input.edge, input.frame, available);
+    const first = trimClipInSequence(sequence, input.clipId, input.edge, input.frame, maxSourceOut);
     if (!first.ok) return first;
 
     let next = first.value;
@@ -320,8 +327,10 @@ export function trimClip(project: Project, input: TrimClipInput): EditResult {
       const partner = next.clips[partnerId];
       if (partner && partner.start === clip.start && getClipEnd(partner) === getClipEnd(clip)) {
         const partnerAsset = project.mediaAssets[partner.assetId];
-        const partnerAvailable = partnerAsset ? getAssetFrameCount(partnerAsset, sequence) : available;
-        const second = trimClipInSequence(next, partnerId, input.edge, input.frame, partnerAvailable);
+        const partnerMaxSourceOut = partnerAsset
+          ? getMaxClipSourceOutFrames(partnerAsset, sequence)
+          : maxSourceOut;
+        const second = trimClipInSequence(next, partnerId, input.edge, input.frame, partnerMaxSourceOut);
         if (!second.ok) return second;
         next = second.value;
       }
@@ -393,17 +402,28 @@ export interface UpdateClipTransformInput {
   readonly transform: Partial<ClipTransform>;
 }
 
+function mergeClipTransform(current: ClipTransform, patch: Partial<ClipTransform>): ClipTransform {
+  const uniformScale = typeof patch.uniformScale === 'boolean' ? patch.uniformScale : current.uniformScale;
+  let scaleX = limit(patch.scaleX, current.scaleX, TRANSFORM_LIMITS.scale);
+  let scaleY = limit(patch.scaleY, current.scaleY, TRANSFORM_LIMITS.scale);
+  if (patch.scaleX !== undefined && uniformScale) scaleY = scaleX;
+  if (patch.scaleY !== undefined && uniformScale) scaleX = scaleY;
+  if (patch.uniformScale === true) scaleY = scaleX;
+  return {
+    positionX: limit(patch.positionX, current.positionX, TRANSFORM_LIMITS.position),
+    positionY: limit(patch.positionY, current.positionY, TRANSFORM_LIMITS.position),
+    scaleX,
+    scaleY,
+    uniformScale,
+    rotation: limit(patch.rotation, current.rotation, TRANSFORM_LIMITS.rotation),
+    opacity: limit(patch.opacity, current.opacity, TRANSFORM_LIMITS.opacity),
+  };
+}
+
 /** Updates transform properties. Values are clamped to supported ranges. */
 export function updateClipTransform(project: Project, input: UpdateClipTransformInput): EditResult {
   return updateClip(project, input.sequenceId, input.clipId, (clip) => {
-    const t = input.transform;
-    const next: ClipTransform = {
-      positionX: limit(t.positionX, clip.transform.positionX, TRANSFORM_LIMITS.position),
-      positionY: limit(t.positionY, clip.transform.positionY, TRANSFORM_LIMITS.position),
-      scale: limit(t.scale, clip.transform.scale, TRANSFORM_LIMITS.scale),
-      rotation: limit(t.rotation, clip.transform.rotation, TRANSFORM_LIMITS.rotation),
-      opacity: limit(t.opacity, clip.transform.opacity, TRANSFORM_LIMITS.opacity),
-    };
+    const next = mergeClipTransform(clip.transform, input.transform);
     const unchanged = (Object.keys(next) as (keyof ClipTransform)[]).every((k) => next[k] === clip.transform[k]);
     return unchanged ? clip : { ...clip, transform: next };
   });

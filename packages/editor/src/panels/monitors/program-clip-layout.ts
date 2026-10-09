@@ -56,7 +56,7 @@ export function programClipWrapperStyle(
     top: '50%',
     width: boxWidth,
     height: boxHeight,
-    transform: `translate(-50%, -50%) translate(${px}px, ${py}px) rotate(${t.rotation}deg) scale(${t.scale / 100})`,
+    transform: `translate(-50%, -50%) translate(${px}px, ${py}px) rotate(${t.rotation}deg) scale(${t.scaleX / 100}, ${t.scaleY / 100})`,
     transformOrigin: 'center center',
     opacity: t.opacity / 100,
   };

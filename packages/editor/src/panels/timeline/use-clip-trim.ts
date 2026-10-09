@@ -78,7 +78,7 @@ export function useClipTrim(clip: Clip, track: Track, pixelsPerFrame: number) {
     const preview = trim.previews.find((p) => p.clipId === g.clip.id);
     if (!preview) return;
     if (g.edge === 'start') {
-      runtime.actions.edit.trimClipToEdge(g.clip.id, 'start', preview.start);
+      runtime.actions.edit.trimClipToEdge(g.clip.id, 'start', Math.round(preview.start));
     } else {
       runtime.actions.edit.trimClipToEdge(g.clip.id, 'end', sequenceEndFrame(preview));
     }

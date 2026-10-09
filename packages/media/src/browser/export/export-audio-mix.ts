@@ -4,10 +4,8 @@ import {
   effectiveClipLinearGain,
   findTrack,
   framesToSeconds,
-  getActiveAudioClipsAt,
+  getAudibleClipsAt,
   getSequenceDuration,
-  getTopmostVideoClipAt,
-  clipContributesEmbeddedAudio,
   secondsToFrames,
   type Clip,
   type FrameRate,
@@ -120,9 +118,7 @@ export async function mixSequenceAudio(
     );
     let l = 0;
     let r = 0;
-    for (const { clip } of getActiveAudioClipsAt(sequence, seqFrame)) {
-      const asset = project.mediaAssets[clip.assetId];
-      if (!asset?.hasAudio) continue;
+    for (const clip of getAudibleClipsAt(sequence, seqFrame, project.mediaAssets)) {
       const buffer = buffers.get(clip.assetId);
       if (!buffer) continue;
       const sourceSeconds = sourceSecondsForClip(clip, t, sequence.frameRate);
@@ -130,18 +126,6 @@ export async function mixSequenceAudio(
       const [gl, gr] = applyClipGain(sl, sr, clip, sequence);
       l += gl;
       r += gr;
-    }
-    const program = getTopmostVideoClipAt(sequence, seqFrame);
-    if (program && clipContributesEmbeddedAudio(program.clip)) {
-      const asset = project.mediaAssets[program.clip.assetId];
-      const buffer = asset?.hasAudio ? buffers.get(program.clip.assetId) : undefined;
-      if (buffer) {
-        const sourceSeconds = sourceSecondsForClip(program.clip, t, sequence.frameRate);
-        const [sl, sr] = stereoSample(buffer, sourceSeconds);
-        const [gl, gr] = applyClipGain(sl, sr, program.clip, sequence);
-        l += gl;
-        r += gr;
-      }
     }
     left[sample] = Math.max(-1, Math.min(1, l));
     right[sample] = Math.max(-1, Math.min(1, r));

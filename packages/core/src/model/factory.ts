@@ -13,6 +13,7 @@ import {
   type ClipId,
   type MediaAsset,
   type MediaAssetId,
+  type MediaBinFolderId,
   type MediaKind,
   type MediaSourceRef,
   type MetadataValue,
@@ -31,6 +32,7 @@ export const newSequenceId = (): SequenceId => createId('seq') as SequenceId;
 export const newTrackId = (): TrackId => createId('track') as TrackId;
 export const newClipId = (): ClipId => createId('clip') as ClipId;
 export const newMediaAssetId = (): MediaAssetId => createId('asset') as MediaAssetId;
+export const newMediaBinFolderId = (): MediaBinFolderId => createId('bin') as MediaBinFolderId;
 
 export function trackName(kind: TrackKind, index: number): string {
   return `${kind === 'video' ? 'V' : 'A'}${index + 1}`;
@@ -102,6 +104,7 @@ export function createProject(options: CreateProjectOptions = {}): Project {
     createdAt: timestamp,
     modifiedAt: timestamp,
     mediaAssets: {},
+    mediaBinFolders: {},
     sequences: { [sequence.id]: sequence },
     activeSequenceId: sequence.id,
   };
@@ -118,6 +121,7 @@ export interface CreateMediaAssetOptions {
   readonly resolution?: Resolution | null;
   readonly frameRate?: FrameRate | null;
   readonly metadata?: Readonly<Record<string, MetadataValue>>;
+  readonly folderId?: MediaBinFolderId | null;
   readonly now?: Date;
 }
 
@@ -126,6 +130,7 @@ export function createMediaAsset(options: CreateMediaAssetOptions): MediaAsset {
     id: options.id ?? newMediaAssetId(),
     name: options.name,
     kind: options.kind,
+    folderId: options.folderId ?? null,
     source: options.source,
     duration: options.duration,
     hasVideo: options.hasVideo,

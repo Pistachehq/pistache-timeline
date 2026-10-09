@@ -2,49 +2,102 @@ import {
   findTrack,
   getStackedVideoClipsAt,
   TRANSFORM_LIMITS,
+  type ActiveVideoClip,
   type Clip,
   type ClipId,
   type Sequence,
 } from '@timeline/core';
 import { clamp } from '@timeline/shared';
-import { useEffect, useMemo, useRef, type PointerEvent as ReactPointerEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, type PointerEvent as ReactPointerEvent } from 'react';
 import { useElementSize } from '../../hooks/use-element-size';
+import { playbackDecodeFactor, videoDecodeDimensions } from '../../playback/playback-decode';
 import { sourceTimeForFrame } from '../../playback/frame-math';
-import { useMediaState, usePlaybackState, useProjectState, useRuntime, useSelectionState } from '../../runtime/context';
+import {
+  useMediaState,
+  usePlaybackState,
+  useProjectState,
+  useRuntime,
+  useSelectionState,
+  useUiState,
+} from '../../runtime/context';
 import { hitTestProgramClipAt, letterboxMediaSize, programClipWrapperStyle } from './program-clip-layout';
 import { ProgramTransformOverlay } from './ProgramTransformOverlay';
 
 const LAYER_Z = 10;
+const SEEK_EPSILON = 0.05;
+const PLAYBACK_DRIFT = 0.22;
+
+type VideoRegistry = Map<ClipId, HTMLVideoElement>;
+
+function syncStackVideos(
+  stack: readonly ActiveVideoClip[],
+  sequence: Sequence,
+  playhead: number,
+  videos: VideoRegistry,
+  playing: boolean,
+  assets: Readonly<Record<string, { kind: string; hasVideo: boolean } | undefined>>,
+): void {
+  for (const { clip } of stack) {
+    const el = videos.get(clip.id);
+    if (!el) continue;
+    const asset = assets[clip.assetId];
+    if (!asset || asset.kind === 'image' || !asset.hasVideo) continue;
+
+    el.muted = true;
+    const seconds = sourceTimeForFrame(clip, playhead, sequence.frameRate);
+
+    if (playing) {
+      if (el.paused) {
+        if (Math.abs(el.currentTime - seconds) >= SEEK_EPSILON) el.currentTime = seconds;
+        void el.play().catch(() => undefined);
+      } else if (Math.abs(el.currentTime - seconds) > PLAYBACK_DRIFT) {
+        el.currentTime = seconds;
+      }
+    } else {
+      if (!el.paused) el.pause();
+      if (Math.abs(el.currentTime - seconds) >= SEEK_EPSILON) el.currentTime = seconds;
+    }
+  }
+}
 
 interface LayerProps {
   readonly clip: Clip;
   readonly sequence: Sequence;
   readonly stackIndex: number;
-  readonly playhead: number;
-  readonly playing: boolean;
   readonly frameWidth: number;
   readonly frameHeight: number;
+  readonly decodeFactor: number;
+  readonly registerVideo: (clipId: ClipId, el: HTMLVideoElement | null) => void;
 }
 
 function CompositeLayer({
   clip,
   sequence,
   stackIndex,
-  playhead,
-  playing,
   frameWidth,
   frameHeight,
+  decodeFactor,
+  registerVideo,
 }: LayerProps) {
   const asset = useProjectState((s) => s.project.mediaAssets[clip.assetId]);
   const entry = useMediaState((s) => s.entries[clip.assetId]);
   const selected = useSelectionState((s) => s.clipIds.includes(clip.id));
-  const videoRef = useRef<HTMLVideoElement>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
   const url = entry?.status === 'online' && entry.handle ? entry.handle.url : null;
   const isImage = asset?.kind === 'image';
 
   const mediaW = asset?.resolution?.width ?? 0;
   const mediaH = asset?.resolution?.height ?? 0;
   const box = letterboxMediaSize(frameWidth, frameHeight, mediaW, mediaH);
+  const decode = videoDecodeDimensions(mediaW, mediaH, box.width, box.height, decodeFactor);
+
+  const bindVideo = useCallback(
+    (node: HTMLVideoElement | null) => {
+      videoRef.current = node;
+      registerVideo(clip.id, node);
+    },
+    [clip.id, registerVideo],
+  );
 
   useEffect(() => {
     const el = videoRef.current;
@@ -57,18 +110,10 @@ function CompositeLayer({
 
   useEffect(() => {
     const el = videoRef.current;
-    if (!el || isImage || !url) return;
-    const sourceSeconds = sourceTimeForFrame(clip, playhead, sequence.frameRate);
-    if (Math.abs(el.currentTime - sourceSeconds) < 0.03) return;
-    el.currentTime = sourceSeconds;
-  }, [clip, isImage, playhead, sequence.frameRate, url]);
-
-  useEffect(() => {
-    const el = videoRef.current;
-    if (!el || isImage || !url) return;
-    if (playing) void el.play().catch(() => undefined);
-    else el.pause();
-  }, [isImage, playing, url]);
+    if (!el || isImage) return;
+    el.width = decode.width;
+    el.height = decode.height;
+  }, [decode.height, decode.width, isImage]);
 
   if (!asset || !url || box.width <= 0 || box.height <= 0) return null;
 
@@ -86,9 +131,9 @@ function CompositeLayer({
       style={wrapperStyle}
     >
       {isImage ? (
-        <img src={url} alt="" draggable={false} className={mediaClass} />
+        <img src={url} alt="" draggable={false} className={mediaClass} decoding="async" />
       ) : (
-        <video ref={videoRef} muted playsInline className={mediaClass} />
+        <video ref={bindVideo} muted playsInline preload="auto" className={mediaClass} />
       )}
     </div>
   );
@@ -99,12 +144,42 @@ export function ProgramCompositeLayers({ sequence }: { readonly sequence: Sequen
   const runtime = useRuntime();
   const { edit } = runtime.actions;
   const containerRef = useRef<HTMLDivElement>(null);
+  const videoRegistry = useRef<VideoRegistry>(new Map());
   const { width: frameWidth, height: frameHeight } = useElementSize(containerRef);
   const playhead = usePlaybackState((s) => s.playhead);
   const playing = usePlaybackState((s) => s.playing);
+  const decodeFactor = playbackDecodeFactor(useUiState((s) => s.playbackDecodeScale));
   const selectedIds = useSelectionState((s) => s.clipIds);
   const selectedId = selectedIds.length === 1 ? selectedIds[0] : null;
   const stack = useMemo(() => getStackedVideoClipsAt(sequence, playhead), [sequence, playhead]);
+  const mediaAssets = useProjectState((s) => s.project.mediaAssets);
+
+  const registerVideo = useCallback((clipId: ClipId, el: HTMLVideoElement | null) => {
+    if (el) videoRegistry.current.set(clipId, el);
+    else videoRegistry.current.delete(clipId);
+  }, []);
+
+  const syncVideos = useCallback(
+    (frame: number, isPlaying: boolean) => {
+      syncStackVideos(stack, sequence, frame, videoRegistry.current, isPlaying, mediaAssets);
+    },
+    [mediaAssets, sequence, stack],
+  );
+
+  useEffect(() => {
+    syncVideos(playhead, playing);
+  }, [playhead, playing, syncVideos]);
+
+  useEffect(() => {
+    if (!playing) return;
+    let raf = 0;
+    const tick = () => {
+      syncVideos(runtime.stores.playback.getState().playhead, true);
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [playing, runtime, syncVideos]);
 
   const dragRef = useRef<{
     clipId: ClipId;
@@ -199,10 +274,10 @@ export function ProgramCompositeLayers({ sequence }: { readonly sequence: Sequen
           clip={clip}
           sequence={sequence}
           stackIndex={index}
-          playhead={playhead}
-          playing={playing}
           frameWidth={frameWidth}
           frameHeight={frameHeight}
+          decodeFactor={decodeFactor}
+          registerVideo={registerVideo}
         />
       ))}
       {selectedId && selectedStackIndex >= 0 ? (

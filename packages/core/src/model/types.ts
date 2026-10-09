@@ -27,6 +27,7 @@ export type SequenceId = Brand<string, 'SequenceId'>;
 export type TrackId = Brand<string, 'TrackId'>;
 export type ClipId = Brand<string, 'ClipId'>;
 export type MediaAssetId = Brand<string, 'MediaAssetId'>;
+export type MediaBinFolderId = Brand<string, 'MediaBinFolderId'>;
 
 export type TrackKind = 'video' | 'audio';
 export type MediaKind = 'video' | 'audio' | 'image';
@@ -55,10 +56,19 @@ export type MediaSourceRef = LocalFileSource;
 
 export type MetadataValue = string | number | boolean | null;
 
+/** User-defined folder in the project media bin (`null` parent = top level). */
+export interface MediaBinFolder {
+  readonly id: MediaBinFolderId;
+  readonly name: string;
+  readonly parentId: MediaBinFolderId | null;
+}
+
 export interface MediaAsset {
   readonly id: MediaAssetId;
   readonly name: string;
   readonly kind: MediaKind;
+  /** Folder in the project bin; `null` = bin root. */
+  readonly folderId: MediaBinFolderId | null;
   readonly source: MediaSourceRef;
   readonly duration: MediaTime;
   readonly hasVideo: boolean;
@@ -76,8 +86,12 @@ export interface ClipTransform {
   /** Offset from the frame centre, in sequence pixels. */
   readonly positionX: number;
   readonly positionY: number;
-  /** Uniform scale in percent (100 = original size). */
-  readonly scale: number;
+  /** Horizontal scale in percent of the letterboxed media box (100 = original). */
+  readonly scaleX: number;
+  /** Vertical scale in percent of the letterboxed media box (100 = original). */
+  readonly scaleY: number;
+  /** When true, scale X and Y stay equal (uniform scaling). */
+  readonly uniformScale: boolean;
   /** Rotation in degrees, clockwise. */
   readonly rotation: number;
   /** Opacity in percent, 0–100. */
@@ -154,6 +168,7 @@ export interface Project {
   readonly createdAt: string;
   readonly modifiedAt: string;
   readonly mediaAssets: Readonly<Record<MediaAssetId, MediaAsset>>;
+  readonly mediaBinFolders: Readonly<Record<MediaBinFolderId, MediaBinFolder>>;
   readonly sequences: Readonly<Record<SequenceId, Sequence>>;
   readonly activeSequenceId: SequenceId;
 }

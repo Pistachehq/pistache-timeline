@@ -1,9 +1,12 @@
-import { mediaTimeToFrames } from '../time/rational';
+import { MAX_STILL_IMAGE_TIMELINE_SECONDS } from './defaults';
+import { mediaTimeToFrames, secondsToFrames } from '../time/rational';
 import {
   type AudioTrack,
   type Clip,
   type ClipId,
   type MediaAsset,
+  type MediaBinFolder,
+  type MediaBinFolderId,
   type Project,
   type Sequence,
   type SequenceId,
@@ -22,6 +25,32 @@ export function getActiveSequence(project: Project): Sequence | undefined {
 
 export function getMediaAssets(project: Project): MediaAsset[] {
   return Object.values(project.mediaAssets);
+}
+
+export interface MediaBinFolderContents {
+  readonly folders: readonly MediaBinFolder[];
+  readonly assets: readonly MediaAsset[];
+}
+
+/** Folders and assets directly inside a bin folder (`null` = project bin root). */
+export function listMediaBinFolderContents(
+  project: Project,
+  folderId: MediaBinFolderId | null,
+): MediaBinFolderContents {
+  const folders = Object.values(project.mediaBinFolders)
+    .filter((folder) => folder.parentId === folderId)
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+  const assets = Object.values(project.mediaAssets)
+    .filter((asset) => (asset.folderId ?? null) === folderId)
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+  return { folders, assets };
+}
+
+export function countMediaBinItems(project: Project): { folders: number; assets: number } {
+  return {
+    folders: Object.keys(project.mediaBinFolders).length,
+    assets: Object.keys(project.mediaAssets).length,
+  };
 }
 
 /** All tracks, video first (bottom to top) then audio. */
@@ -92,6 +121,21 @@ export function getSequenceDuration(sequence: Sequence): number {
 /** Number of whole sequence frames available in an asset. */
 export function getAssetFrameCount(asset: MediaAsset, sequence: Sequence): number {
   return mediaTimeToFrames(asset.duration, sequence.frameRate, 'floor');
+}
+
+/**
+ * Largest allowed `sourceOut` when trimming a clip. Stills can be held longer
+ * on the timeline than the default import duration.
+ */
+export function isStillImageAsset(asset: MediaAsset): boolean {
+  return asset.kind === 'image';
+}
+
+export function getMaxClipSourceOutFrames(asset: MediaAsset, sequence: Sequence): number {
+  if (isStillImageAsset(asset)) {
+    return secondsToFrames(MAX_STILL_IMAGE_TIMELINE_SECONDS, sequence.frameRate, 'floor');
+  }
+  return getAssetFrameCount(asset, sequence);
 }
 
 /**
@@ -208,21 +252,24 @@ export function getActiveAudioClipsAt(sequence: Sequence, frame: number): Active
   return active;
 }
 
-/** Audio clips that should be heard at `frame` (audio tracks + program video clip). */
+/** Audio clips that should be heard at `frame` (audio tracks + embedded audio on video tracks). */
 export function getAudibleClipsAt(
   sequence: Sequence,
   frame: number,
   assets: Readonly<Record<MediaAsset['id'], MediaAsset>>,
 ): Clip[] {
   const clips: Clip[] = [];
-  for (const { clip } of getActiveAudioClipsAt(sequence, frame)) {
+  const seen = new Set<ClipId>();
+  const add = (clip: Clip) => {
+    if (seen.has(clip.id)) return;
     const asset = assets[clip.assetId];
-    if (asset?.hasAudio) clips.push(clip);
-  }
-  const program = getTopmostVideoClipAt(sequence, frame);
-  if (program && clipContributesEmbeddedAudio(program.clip)) {
-    const asset = assets[program.clip.assetId];
-    if (asset?.hasAudio && !clips.some((c) => c.id === program.clip.id)) clips.push(program.clip);
+    if (!asset?.hasAudio) return;
+    seen.add(clip.id);
+    clips.push(clip);
+  };
+  for (const { clip } of getActiveAudioClipsAt(sequence, frame)) add(clip);
+  for (const { clip } of getStackedVideoClipsAt(sequence, frame)) {
+    if (clipContributesEmbeddedAudio(clip)) add(clip);
   }
   return clips;
 }

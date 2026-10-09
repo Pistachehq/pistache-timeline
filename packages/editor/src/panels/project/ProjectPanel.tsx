@@ -1,20 +1,21 @@
-import { getMediaAssets } from '@timeline/core';
+import { countMediaBinItems } from '@timeline/core';
 import { Button, EmptyState, IconButton, PanelFrame } from '@timeline/ui';
-import { FolderOpen, FolderUp, Import } from 'lucide-react';
+import { FolderOpen, FolderPlus, FolderUp, Import } from 'lucide-react';
 import { type DragEvent } from 'react';
-import { useShallow } from 'zustand/react/shallow';
 import { executeCommand, shortcutLabel } from '../../commands/commands';
 import { useProjectState, useRuntime } from '../../runtime/context';
 import { allowOsFileDrop, filesFromDataTransfer, isOsFileDrag } from '../file-drop';
-import { MediaListItem } from './MediaListItem';
+import { MediaBinView } from './MediaBinView';
 
 /** Project / media bin: lists imported assets and offers import and relink actions. */
 export function ProjectPanel() {
   const runtime = useRuntime();
-  const assets = useProjectState(useShallow((s) => getMediaAssets(s.project)));
-  const projectName = useProjectState((s) => s.project.name);
+  const project = useProjectState((s) => s.project);
+  const projectName = project.name;
+  const { assets: assetCount } = countMediaBinItems(project);
   const importMedia = () => executeCommand('file.import', runtime);
   const importFolder = () => executeCommand('file.importFolder', runtime);
+  const newFolder = () => runtime.actions.media.createBinFolder(null);
 
   const onDropFiles = (event: DragEvent) => {
     if (!isOsFileDrag(event.dataTransfer)) return;
@@ -27,6 +28,7 @@ export function ProjectPanel() {
       title={`Project: ${projectName}`}
       actions={
         <>
+          <IconButton label="New folder" icon={<FolderPlus />} onClick={newFolder} />
           <IconButton
             label="Import folder"
             shortcut={shortcutLabel('file.importFolder')}
@@ -42,11 +44,11 @@ export function ProjectPanel() {
         onDragOver={allowOsFileDrop}
         onDrop={onDropFiles}
       >
-        {assets.length === 0 ? (
+        {assetCount === 0 ? (
           <EmptyState
             icon={<FolderOpen />}
             title="No media imported"
-            description="Drop files or folders here (video, audio, images), or use Import, then drag items onto the timeline."
+            description="Drop files or folders here (video, audio, images), import a folder to keep its structure, or create bins and drag clips into them."
             action={
               <Button size="sm" icon={<Import className="size-3.5" />} onClick={importMedia}>
                 Import Media
@@ -54,16 +56,9 @@ export function ProjectPanel() {
             }
           />
         ) : (
-          <>
-            <ul className="min-h-0 flex-1 space-y-0.5 overflow-y-auto p-1" aria-label="Media assets">
-              {assets.map((asset) => (
-                <MediaListItem key={asset.id} asset={asset} />
-              ))}
-            </ul>
-            <div className="flex h-6 shrink-0 items-center border-t border-line px-2.5 text-2xs text-fg-subtle">
-              {assets.length} item{assets.length === 1 ? '' : 's'}
-            </div>
-          </>
+          <div className="flex min-h-0 flex-1 flex-col">
+            <MediaBinView />
+          </div>
         )}
       </div>
     </PanelFrame>

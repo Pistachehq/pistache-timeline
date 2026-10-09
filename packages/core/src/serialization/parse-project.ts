@@ -3,6 +3,9 @@ import {
   type AudioTrack,
   type Clip,
   type ClipId,
+  type ClipTransform,
+  type MediaBinFolder,
+  type MediaBinFolderId,
   type MediaAsset,
   type MediaAssetId,
   type MetadataValue,
@@ -85,12 +88,44 @@ function parseMediaAsset(value: unknown, path: string): MediaAsset {
     frameRate: obj.frameRate == null ? null : parseFrameRate(obj.frameRate, `${path}.frameRate`),
     metadata: parseMetadata(obj.metadata, `${path}.metadata`),
     importedAt: readString(obj, 'importedAt', path),
+    folderId:
+      obj.folderId == null ? null : (readString(obj, 'folderId', path) as MediaBinFolderId),
   };
+}
+
+function parseMediaBinFolder(value: unknown, path: string): MediaBinFolder {
+  const obj = readObject(value, path);
+  return {
+    id: readString(obj, 'id', path) as MediaBinFolderId,
+    name: readString(obj, 'name', path),
+    parentId:
+      obj.parentId == null ? null : (readString(obj, 'parentId', path) as MediaBinFolderId),
+  };
+}
+
+function parseClipTransform(value: unknown, path: string): ClipTransform {
+  const transform = readObject(value, path);
+  const positionX = readNumber(transform, 'positionX', path);
+  const positionY = readNumber(transform, 'positionY', path);
+  const rotation = readNumber(transform, 'rotation', path);
+  const opacity = readNumber(transform, 'opacity', path);
+  let scaleX: number;
+  let scaleY: number;
+  if (isObject(transform) && 'scaleX' in transform && 'scaleY' in transform) {
+    scaleX = readNumber(transform, 'scaleX', path);
+    scaleY = readNumber(transform, 'scaleY', path);
+  } else {
+    const scale = readNumber(transform, 'scale', path);
+    scaleX = scale;
+    scaleY = scale;
+  }
+  const uniformScale =
+    transform.uniformScale === undefined ? true : readBoolean(transform, 'uniformScale', path);
+  return { positionX, positionY, scaleX, scaleY, uniformScale, rotation, opacity };
 }
 
 function parseClip(value: unknown, path: string): Clip {
   const obj = readObject(value, path);
-  const transform = readObject(obj.transform, `${path}.transform`);
   const audio = readObject(obj.audio, `${path}.audio`);
   return {
     id: readString(obj, 'id', path) as ClipId,
@@ -101,13 +136,7 @@ function parseClip(value: unknown, path: string): Clip {
     start: readInteger(obj, 'start', path),
     sourceIn: readInteger(obj, 'sourceIn', path),
     sourceOut: readInteger(obj, 'sourceOut', path),
-    transform: {
-      positionX: readNumber(transform, 'positionX', `${path}.transform`),
-      positionY: readNumber(transform, 'positionY', `${path}.transform`),
-      scale: readNumber(transform, 'scale', `${path}.transform`),
-      rotation: readNumber(transform, 'rotation', `${path}.transform`),
-      opacity: readNumber(transform, 'opacity', `${path}.transform`),
-    },
+    transform: parseClipTransform(obj.transform, `${path}.transform`),
     audio: {
       volume: readNumber(audio, 'volume', `${path}.audio`),
       muted: readBoolean(audio, 'muted', `${path}.audio`),
@@ -182,6 +211,10 @@ export function parseProject(value: unknown): Project {
     createdAt: readString(value, 'createdAt', path),
     modifiedAt: readString(value, 'modifiedAt', path),
     mediaAssets: parseRecord(value.mediaAssets, `${path}.mediaAssets`, parseMediaAsset),
+    mediaBinFolders:
+      value.mediaBinFolders == null
+        ? {}
+        : parseRecord(value.mediaBinFolders, `${path}.mediaBinFolders`, parseMediaBinFolder),
     sequences: parseRecord(value.sequences, `${path}.sequences`, parseSequence),
     activeSequenceId: readString(value, 'activeSequenceId', path) as SequenceId,
   };

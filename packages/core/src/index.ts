@@ -12,6 +12,7 @@ export * from './operations/common';
 export * from './operations/clips';
 export * from './operations/tracks';
 export * from './operations/media';
+export * from './operations/media-bin';
 
 export * from './timeline/placement';
 export * from './timeline/overwrite';
