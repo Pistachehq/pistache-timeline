@@ -144,6 +144,8 @@ export interface MediaEngine {
 
   /** Lets the user choose media files. Must be called from a user gesture on the web. */
   pickMedia(options: PickMediaOptions): Promise<PickMediaResult>;
+  /** Registers files from drag-and-drop or other OS delivery (no file picker). */
+  importLocalFiles(files: readonly File[]): Promise<PickMediaResult>;
   /** Re-opens a referenced file. Resolves `null` when it is not accessible (offline). */
   resolve(source: MediaSourceRef): Promise<MediaHandle | null>;
   probe(handle: MediaHandle, kind: MediaKind, signal?: AbortSignal): Promise<MediaMetadata>;

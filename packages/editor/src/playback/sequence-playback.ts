@@ -274,7 +274,6 @@ export class SequencePlaybackController {
     this.#lastTick = now;
     const end = getSequenceDuration(sequence);
     const current = playback.getState().playhead;
-    this.#bind(sequence, current);
 
     let next = current;
 
@@ -347,11 +346,13 @@ export class SequencePlaybackController {
     }
 
     if (next >= end) {
+      this.#bind(sequence, end);
       this.#write(end);
       playback.getState().setPlaying(false);
       return;
     }
 
+    this.#bind(sequence, next);
     this.#write(next);
     this.#raf = requestAnimationFrame(this.#tick);
   };

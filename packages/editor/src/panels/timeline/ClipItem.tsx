@@ -1,4 +1,4 @@
-import { type Clip, type FrameRate, getAssetFrameCount, getClipDuration, type Track } from '@timeline/core';
+import { type Clip, type FrameRate, getAssetFrameCount, type Track } from '@timeline/core';
 import { cn } from '@timeline/ui';
 import { Link2Off } from 'lucide-react';
 import { memo } from 'react';
@@ -8,33 +8,55 @@ import { useActiveSequence, useAsset } from '../../runtime/hooks';
 import { ClipWaveform } from './ClipWaveform';
 import { AUDIO_TRACK_HEIGHT, MIN_LABEL_WIDTH } from './layout';
 import { useClipDrag } from './use-clip-drag';
+import { useClipTrim } from './use-clip-trim';
 
 interface ClipItemProps {
   clip: Clip;
   track: Track;
   pixelsPerFrame: number;
   frameRate: FrameRate;
+  /** Renders a cross-track drag preview on the destination lane (not the clip's home track). */
+  dragGhost?: boolean;
 }
 
-export const ClipItem = memo(function ClipItem({ clip, track, pixelsPerFrame, frameRate }: ClipItemProps) {
+export const ClipItem = memo(function ClipItem({
+  clip,
+  track,
+  pixelsPerFrame,
+  frameRate,
+  dragGhost = false,
+}: ClipItemProps) {
   const selected = useSelectionState((s) => s.clipIds.includes(clip.id));
   const drag = useUiState((s) => s.clipDrag?.previews.find((p) => p.clipId === clip.id) ?? null);
+  const trimPreview = useUiState((s) => s.clipTrim?.previews.find((p) => p.clipId === clip.id) ?? null);
+  const trimming = trimPreview !== null;
   const razor = useUiState((s) => s.tool === 'razor');
   const thumbnail = useMediaState((s) => s.entries[clip.assetId]?.thumbnail ?? null);
   const waveform = useMediaState((s) => s.entries[clip.assetId]?.waveform ?? null);
   const status = useMediaState((s) => s.entries[clip.assetId]?.status);
   const asset = useAsset(clip.assetId);
   const sequence = useActiveSequence();
+  const tool = useUiState((s) => s.tool);
   const handlers = useClipDrag(clip, track, pixelsPerFrame);
+  const trim = useClipTrim(clip, track, pixelsPerFrame);
   const formatTime = useFormatDisplayTime();
 
   const offline = status === 'offline' || status === 'error';
   const isVideo = track.kind === 'video';
-  const duration = getClipDuration(clip);
-  const start = drag?.start ?? clip.start;
+  const sourceIn = trimPreview?.sourceIn ?? clip.sourceIn;
+  const sourceOut = trimPreview?.sourceOut ?? clip.sourceOut;
+  const duration = sourceOut - sourceIn;
+  const start = drag?.start ?? trimPreview?.start ?? clip.start;
   const width = Math.max(2, duration * pixelsPerFrame);
   const assetFrameCount = asset && sequence ? getAssetFrameCount(asset, sequence) : 0;
   const showWaveform = !isVideo && waveform && assetFrameCount > 0;
+  const activeTrim = useUiState((s) => s.clipTrim);
+  const isTrimPrimary = activeTrim?.primaryClipId === clip.id;
+
+  if (drag && !dragGhost && drag.trackId !== track.id) return null;
+
+  const crossTrackGhost = dragGhost && drag !== null;
+  const showDragOnLane = crossTrackGhost || (drag !== null && drag.trackId === track.id);
 
   return (
     <div
@@ -51,28 +73,58 @@ export const ClipItem = memo(function ClipItem({ clip, track, pixelsPerFrame, fr
         offline && 'bg-danger/40',
         selected ? 'border-white' : isVideo ? 'border-clip-video-strong/60' : 'border-clip-audio-strong/60',
         !clip.enabled && 'opacity-40',
-        drag ? 'z-30 cursor-grabbing opacity-85 shadow-popover' : razor ? 'cursor-none' : 'cursor-grab',
+        showDragOnLane || trimming
+          ? 'z-30 opacity-90 shadow-popover'
+          : razor
+            ? 'cursor-inherit'
+            : 'cursor-grab',
+        showDragOnLane && !dragGhost && 'cursor-grabbing',
         track.locked && 'cursor-not-allowed',
       )}
       style={{
         left: start * pixelsPerFrame,
         width,
-        transform: drag ? `translateY(${drag.offsetY}px)` : undefined,
+        transform: drag && !dragGhost && drag.trackId === track.id ? `translateY(${drag.offsetY}px)` : undefined,
       }}
-      {...handlers}
+      {...(activeTrim || dragGhost ? {} : handlers)}
     >
+      {tool === 'select' && !track.locked && !drag && !razor && (!trimming || isTrimPrimary) ? (
+        <>
+          <button
+            type="button"
+            aria-label="Trim clip start"
+            className="absolute top-0 bottom-0 left-0 z-20 w-2.5 cursor-w-resize border-0 bg-black/25 px-0 font-mono text-[10px] leading-none text-white/90 opacity-0 hover:opacity-100 focus:opacity-100"
+            {...trim.start}
+          >
+            [
+          </button>
+          <button
+            type="button"
+            aria-label="Trim clip end"
+            className="absolute top-0 bottom-0 right-0 z-20 w-2.5 cursor-e-resize border-0 bg-black/25 px-0 font-mono text-[10px] leading-none text-white/90 opacity-0 hover:opacity-100 focus:opacity-100"
+            {...trim.end}
+          >
+            ]
+          </button>
+        </>
+      ) : null}
       {showWaveform ? (
         <ClipWaveform
           peaks={waveform}
-          sourceIn={clip.sourceIn}
-          sourceOut={clip.sourceOut}
+          sourceIn={sourceIn}
+          sourceOut={sourceOut}
           assetFrameCount={assetFrameCount}
           width={width}
           height={AUDIO_TRACK_HEIGHT - 8}
         />
       ) : null}
       {isVideo && thumbnail && width > 48 ? (
-        <img src={thumbnail} alt="" draggable={false} className="h-full w-auto shrink-0 object-cover opacity-80" />
+        <img
+          src={thumbnail}
+          alt=""
+          draggable={false}
+          className="h-full w-auto shrink-0 object-cover opacity-80"
+        />
       ) : null}
       {width >= MIN_LABEL_WIDTH ? (
         <span className="relative z-10 flex min-w-0 items-start gap-1 px-1.5 py-0.5">

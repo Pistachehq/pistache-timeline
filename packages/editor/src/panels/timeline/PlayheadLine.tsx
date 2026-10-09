@@ -1,6 +1,6 @@
 import { type RefObject, useEffect, useRef } from 'react';
 import { useRuntime } from '../../runtime/context';
-import { TRACK_HEADER_WIDTH } from './layout';
+import { RULER_HEIGHT, TRACK_HEADER_WIDTH } from './layout';
 
 const FOLLOW_MARGIN_PX = 48;
 
@@ -43,8 +43,8 @@ export function PlayheadLine({
     <div
       ref={lineRef}
       aria-hidden
-      className="pointer-events-none absolute top-0 bottom-0 z-[15] w-px bg-playhead will-change-transform"
-      style={{ left: TRACK_HEADER_WIDTH }}
+      className="pointer-events-none absolute bottom-0 z-10 w-px bg-playhead will-change-transform"
+      style={{ left: TRACK_HEADER_WIDTH, top: RULER_HEIGHT }}
       data-testid="playhead-line"
     />
   );

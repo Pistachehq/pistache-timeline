@@ -12,7 +12,7 @@ export function SnapGuides({ pixelsPerFrame }: { pixelsPerFrame: number }) {
         <div
           key={frame}
           aria-hidden
-          className="pointer-events-none absolute bottom-0 z-[14] w-px bg-warning/90 will-change-transform"
+          className="pointer-events-none absolute bottom-0 z-10 w-px bg-warning/90 will-change-transform"
           style={{
             left: TRACK_HEADER_WIDTH,
             top: RULER_HEIGHT,

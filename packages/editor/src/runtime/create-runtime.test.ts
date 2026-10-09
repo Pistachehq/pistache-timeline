@@ -24,6 +24,7 @@ function createTestMediaEngine(): MediaEngine {
       export: false,
     },
     pickMedia: () => Promise.resolve({ files: [], rejected: [] }),
+    importLocalFiles: () => Promise.resolve({ files: [], rejected: [] }),
     resolve: () => Promise.resolve(null),
     probe: () =>
       Promise.resolve({

@@ -1,4 +1,12 @@
-import { findTrack, type Clip, type ClipId, type Sequence, type TrackId } from '@timeline/core';
+import {
+  findTrack,
+  pairedAudioTrack,
+  pairedVideoTrack,
+  type Clip,
+  type ClipId,
+  type Sequence,
+  type TrackId,
+} from '@timeline/core';
 import { type ClipDragPreview } from '../../state/ui-store';
 
 /** Clips that move together: selection (or primary alone) plus unlocked linked partners. */
@@ -28,23 +36,60 @@ export function expandMovingClips(sequence: Sequence, primary: Clip, selectedIds
     .filter((c): c is Clip => c !== undefined);
 }
 
+function laneTop(trackId: TrackId): number | null {
+  const lane = document.querySelector<HTMLElement>(`[data-track-lane][data-track-id="${trackId}"]`);
+  return lane ? lane.getBoundingClientRect().top : null;
+}
+
+function linkedPartnerTrackId(
+  sequence: Sequence,
+  primary: Clip,
+  primaryDestTrackId: TrackId,
+  partner: Clip,
+): TrackId {
+  const linked = primary.linkId === partner.id || partner.linkId === primary.id;
+  if (!linked) return partner.trackId;
+
+  const primaryDest = findTrack(sequence, primaryDestTrackId);
+  if (!primaryDest) return partner.trackId;
+
+  if (primaryDest.kind === 'video') {
+    return pairedAudioTrack(sequence, primaryDestTrackId)?.id ?? partner.trackId;
+  }
+  return pairedVideoTrack(sequence, primaryDestTrackId)?.id ?? partner.trackId;
+}
+
 export function buildDragPreviews(
+  sequence: Sequence,
   moving: readonly Clip[],
   primary: Clip,
   primaryStart: number,
-  primaryTrackId: TrackId,
+  primaryDestTrackId: TrackId,
   primaryOffsetY: number,
 ): ClipDragPreview[] {
   const delta = primaryStart - primary.start;
+
   return moving.map((clip) => {
     if (clip.id === primary.id) {
-      return { clipId: clip.id, start: primaryStart, trackId: primaryTrackId, offsetY: primaryOffsetY };
+      return {
+        clipId: clip.id,
+        start: primaryStart,
+        trackId: primaryDestTrackId,
+        offsetY: primaryOffsetY,
+      };
     }
+
+    const destTrackId = linkedPartnerTrackId(sequence, primary, primaryDestTrackId, clip);
+    const sourceTop = laneTop(clip.trackId);
+    const destTop = laneTop(destTrackId);
+    const offsetY =
+      sourceTop !== null && destTop !== null ? destTop - sourceTop : primaryOffsetY;
+
     return {
       clipId: clip.id,
       start: Math.max(0, clip.start + delta),
-      trackId: clip.trackId,
-      offsetY: 0,
+      trackId: destTrackId,
+      offsetY,
     };
   });
 }

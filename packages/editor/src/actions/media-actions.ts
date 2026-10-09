@@ -81,52 +81,77 @@ export function createMediaActions(services: EditorServices) {
     }
   };
 
+  const importPickedFiles = async (
+    pickedFiles: readonly PickedMedia[],
+    initialFailures: readonly string[],
+    undoLabel: string,
+  ): Promise<MediaAsset[]> => {
+    const failures = [...initialFailures];
+    if (pickedFiles.length === 0 && failures.length === 0) return [];
+
+    const task = ui.getState().startTask(`Importing ${pickedFiles.length} file(s)…`);
+    const imported: { asset: MediaAsset; handle: MediaHandle }[] = [];
+    try {
+      for (const picked of pickedFiles) {
+        const metadata = await probe(picked);
+        if (typeof metadata === 'string') failures.push(`${picked.source.fileName}: ${metadata}`);
+        else imported.push({ asset: assetFromProbe(picked, metadata), handle: picked.handle });
+      }
+    } finally {
+      ui.getState().endTask(task);
+    }
+
+    const assets = imported.map((entry) => entry.asset);
+    const result = projectStore.getState().apply(undoLabel, (project) => addMediaAssets(project, assets));
+    if (!result.ok) {
+      ui.getState().notify(result.error.message, 'error');
+      return [];
+    }
+    for (const { asset, handle } of imported) markOnline(asset, handle);
+    const first = assets[0];
+    if (first) selection.getState().selectAsset(first.id);
+
+    if (failures.length > 0) {
+      const importedCount = assets.length > 0 ? `Imported ${assets.length}; ` : '';
+      ui.getState().notify(`${importedCount}could not import ${failures.join('; ')}`, 'warning');
+    } else if (assets.length > 0) {
+      ui.getState().notify(`Imported ${assets.length} file${assets.length === 1 ? '' : 's'}.`, 'success');
+    }
+    return assets;
+  };
+
   return {
     /** Opens the platform picker, probes the chosen files and adds them to the project. */
     async importMedia(): Promise<MediaAsset[]> {
-      let pickedFiles: readonly PickedMedia[];
-      const failures: string[] = [];
       try {
         const result = await engine.pickMedia({ multiple: true });
-        pickedFiles = result.files;
-        failures.push(...result.rejected.map((r) => `${r.fileName}: ${r.reason}`));
+        const label = result.files.length > 1 ? 'Import Media' : 'Import File';
+        return importPickedFiles(
+          result.files,
+          result.rejected.map((r) => `${r.fileName}: ${r.reason}`),
+          label,
+        );
       } catch (error) {
         ui.getState().notify(`Could not open the file picker: ${toErrorMessage(error)}`, 'error');
         return [];
       }
-      if (pickedFiles.length === 0 && failures.length === 0) return [];
+    },
 
-      const task = ui.getState().startTask(`Importing ${pickedFiles.length} file(s)…`);
-      const imported: { asset: MediaAsset; handle: MediaHandle }[] = [];
+    /** Imports files from drag-and-drop (Explorer/Finder → project or timeline). */
+    async importLocalFiles(files: readonly File[]): Promise<MediaAsset[]> {
+      if (files.length === 0) return [];
       try {
-        for (const picked of pickedFiles) {
-          const metadata = await probe(picked);
-          if (typeof metadata === 'string') failures.push(`${picked.source.fileName}: ${metadata}`);
-          else imported.push({ asset: assetFromProbe(picked, metadata), handle: picked.handle });
-        }
-      } finally {
-        ui.getState().endTask(task);
-      }
-
-      const assets = imported.map((entry) => entry.asset);
-      const result = projectStore
-        .getState()
-        .apply(assets.length > 1 ? 'Import Media' : 'Import File', (project) => addMediaAssets(project, assets));
-      if (!result.ok) {
-        ui.getState().notify(result.error.message, 'error');
+        const result = await engine.importLocalFiles(files);
+        const label = result.files.length > 1 ? 'Import Media' : 'Import File';
+        return importPickedFiles(
+          result.files,
+          result.rejected.map((r) => `${r.fileName}: ${r.reason}`),
+          label,
+        );
+      } catch (error) {
+        ui.getState().notify(`Could not import files: ${toErrorMessage(error)}`, 'error');
         return [];
       }
-      for (const { asset, handle } of imported) markOnline(asset, handle);
-      const first = assets[0];
-      if (first) selection.getState().selectAsset(first.id);
-
-      if (failures.length > 0) {
-        const imported = assets.length > 0 ? `Imported ${assets.length}; ` : '';
-        ui.getState().notify(`${imported}could not import ${failures.join('; ')}`, 'warning');
-      } else {
-        ui.getState().notify(`Imported ${assets.length} file${assets.length === 1 ? '' : 's'}.`, 'success');
-      }
-      return assets;
     },
 
     /** Re-opens every asset of a freshly loaded project; inaccessible ones become offline. */

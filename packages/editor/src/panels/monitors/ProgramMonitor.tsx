@@ -84,6 +84,7 @@ export function ProgramMonitor() {
   const areaRef = useRef<HTMLDivElement>(null);
   const area = useElementSize(areaRef);
   const scale = useUiState((s) => s.programScale);
+  const decodeScale = useUiState((s) => s.playbackDecodeScale);
   const timeFormat = useTimeDisplayFormat();
   const playing = usePlaybackState((s) => s.playing);
   const clipId = usePlaybackState((s) => s.programClipId);
@@ -100,6 +101,16 @@ export function ProgramMonitor() {
     );
     return () => controller.dispose();
   }, [runtime]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !sequence) return;
+    const factor = Number(decodeScale);
+    const w = Math.max(2, Math.round(sequence.resolution.width * factor));
+    const h = Math.max(2, Math.round(sequence.resolution.height * factor));
+    video.width = w;
+    video.height = h;
+  }, [sequence, decodeScale]);
 
   const size = sequence ? frameSize(sequence, scale, area) : { width: 0, height: 0 };
   const duration = sequence ? getSequenceDuration(sequence) : 0;

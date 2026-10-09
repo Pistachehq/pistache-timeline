@@ -118,14 +118,14 @@ export function RazorLine({
       <div
         ref={lineRef}
         aria-hidden
-        className="pointer-events-none absolute bottom-0 top-0 z-[16] w-px bg-warning opacity-0 will-change-transform"
+        className="pointer-events-none absolute bottom-0 top-0 z-10 w-px bg-warning opacity-0 will-change-transform"
         style={{ left: TRACK_HEADER_WIDTH, top: RULER_HEIGHT }}
         data-testid="razor-line"
       />
       <div
         ref={labelRef}
         aria-hidden
-        className="pointer-events-none absolute z-[16] -translate-x-1/2 rounded-xs bg-surface-3 px-1 py-px font-mono text-2xs text-warning opacity-0 will-change-transform"
+        className="pointer-events-none absolute z-10 -translate-x-1/2 rounded-xs bg-surface-3 px-1 py-px font-mono text-2xs text-warning opacity-0 will-change-transform"
         style={{ left: TRACK_HEADER_WIDTH, top: RULER_HEIGHT + 2 }}
         data-testid="razor-line-label"
       />

@@ -7,6 +7,7 @@ import {
   type FrameRange,
 } from '@timeline/core';
 import { PanelFrame } from '@timeline/ui';
+import { cn } from '@timeline/ui';
 import { type RefObject, useEffect, useLayoutEffect, useRef } from 'react';
 import { useElementSize } from '../../hooks/use-element-size';
 import { useRuntime, useUiState } from '../../runtime/context';
@@ -43,7 +44,14 @@ interface RowsProps {
 
 function TrackRows({ sequence, tracks, height, width, pixelsPerFrame, visibleRange }: RowsProps) {
   return tracks.map((track) => (
-    <div key={track.id} className="flex">
+    <div
+      key={track.id}
+      className="relative flex bg-surface-0"
+      data-track-row
+      data-track-id={track.id}
+      data-track-kind={track.kind}
+      data-track-locked={track.locked}
+    >
       <TrackHeader track={track} height={height} />
       <TrackLane
         sequence={sequence}
@@ -90,6 +98,7 @@ export function TimelinePanel() {
   const runtime = useRuntime();
   const sequence = useActiveSequence();
   const pixelsPerFrame = useUiState((s) => s.pixelsPerFrame);
+  const tool = useUiState((s) => s.tool);
   const scrollerRef = useRef<HTMLDivElement>(null);
   const viewport = useElementSize(scrollerRef);
   const laneViewportWidth = Math.max(0, viewport.width - TRACK_HEADER_WIDTH);
@@ -131,12 +140,16 @@ export function TimelinePanel() {
       actions={<TimelineToolbar onZoomToFit={zoomToFit} />}
       data-testid="timeline-panel"
     >
-      <div ref={scrollerRef} className="relative min-h-0 flex-1 overflow-auto" data-testid="timeline-scroller">
+      <div
+        ref={scrollerRef}
+        className={cn('relative min-h-0 flex-1 overflow-auto bg-surface-0', tool === 'razor' && 'cursor-razor')}
+        data-testid="timeline-scroller"
+      >
         <MarqueeSelection scrollerRef={scrollerRef} />
-        <div className="relative min-h-full" style={{ width: TRACK_HEADER_WIDTH + contentWidth }}>
+        <div className="relative isolate min-h-full bg-surface-0" style={{ width: TRACK_HEADER_WIDTH + contentWidth }}>
           <div className="sticky top-0 z-30 flex" style={{ height: RULER_HEIGHT }}>
             <div
-              className="sticky left-0 z-10 flex shrink-0 items-center border-r border-b border-line bg-surface-2 px-2"
+              className="sticky left-0 z-[25] flex shrink-0 items-center border-r border-b border-line bg-surface-2 px-2"
               style={{ width: TRACK_HEADER_WIDTH }}
             >
               <PlayheadTimecode frameRate={sequence.frameRate} />
@@ -156,7 +169,10 @@ export function TimelinePanel() {
             pixelsPerFrame={pixelsPerFrame}
             visibleRange={visibleRange}
           />
-          <div className="sticky left-0 bg-surface-0" style={{ height: SECTION_DIVIDER_HEIGHT, width: '100%' }} />
+          <div
+            className="sticky left-0 z-[25] bg-surface-0"
+            style={{ height: SECTION_DIVIDER_HEIGHT, width: '100%' }}
+          />
           <TrackRows
             sequence={sequence}
             tracks={sequence.audioTracks}

@@ -29,22 +29,10 @@ async function seekVideoForExport(video: HTMLVideoElement, seconds: number, sign
   throwIfAborted(signal);
   if (Math.abs(video.currentTime - seconds) < 0.0005) return;
   video.pause();
-  const seeked = waitForMediaEvent(video, 'seeked', { signal });
+  const seeked = waitForMediaEvent(video, 'seeked', { signal, timeoutMs: 60_000 });
   video.currentTime = seconds;
   await seeked;
-  if (!('requestVideoFrameCallback' in video)) return;
-  await new Promise<void>((resolve, reject) => {
-    let handle = 0;
-    const onAbort = () => {
-      video.cancelVideoFrameCallback(handle);
-      reject(new TimelineError('ABORTED', 'The operation was cancelled.'));
-    };
-    handle = video.requestVideoFrameCallback(() => {
-      signal?.removeEventListener('abort', onAbort);
-      resolve();
-    });
-    signal?.addEventListener('abort', onAbort, { once: true });
-  });
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
 }
 
 async function loadVideo(handle: { url: string }, signal?: AbortSignal): Promise<HTMLVideoElement> {
@@ -54,8 +42,36 @@ async function loadVideo(handle: { url: string }, signal?: AbortSignal): Promise
   video.preload = 'auto';
   if (!handle.url.startsWith('blob:')) video.crossOrigin = 'anonymous';
   video.src = handle.url;
-  await waitForMediaEvent(video, 'loadeddata', { signal });
+  await waitForMediaEvent(video, 'loadedmetadata', { signal, timeoutMs: 120_000 });
+  await waitForMediaEvent(video, 'canplay', { signal, timeoutMs: 120_000 });
   return video;
+}
+
+async function drainVideoEncoder(encoder: VideoEncoder): Promise<void> {
+  while (encoder.encodeQueueSize > 0) {
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+  }
+}
+
+async function pickVideoCodec(width: number, height: number, fps: number): Promise<{ codec: string; muxerCodec: 'V_VP9' | 'V_VP8' }> {
+  const bitrate = Math.max(2_000_000, Math.round(width * height * fps * 0.08));
+  const vp9 = await VideoEncoder.isConfigSupported({
+    codec: 'vp09.00.10.08',
+    width,
+    height,
+    bitrate,
+    framerate: fps,
+  });
+  if (vp9.supported) return { codec: 'vp09.00.10.08', muxerCodec: 'V_VP9' };
+  const vp8 = await VideoEncoder.isConfigSupported({
+    codec: 'vp8',
+    width,
+    height,
+    bitrate,
+    framerate: fps,
+  });
+  if (vp8.supported) return { codec: 'vp8', muxerCodec: 'V_VP8' };
+  throw new TimelineError('NOT_IMPLEMENTED', 'Neither VP9 nor VP8 video encoding is supported in this browser.');
 }
 
 function uniqueVideoAssetIds(sequence: Sequence): MediaAssetId[] {
@@ -134,9 +150,11 @@ export async function exportSequenceToWebm(
     onProgress: (p) => onProgress?.({ phase: 'audio', progress: p.progress * 0.25 }),
   });
 
+  const videoCodec = await pickVideoCodec(width, height, fps);
+
   const muxerOptions = {
     target,
-    video: { codec: 'V_VP9', width, height, frameRate: fps },
+    video: { codec: videoCodec.muxerCodec, width, height, frameRate: fps },
     firstTimestampBehavior: 'offset' as const,
     ...(audioMix
       ? {
@@ -166,7 +184,7 @@ export async function exportSequenceToWebm(
   });
 
   encoder.configure({
-    codec: 'vp09.00.10.08',
+    codec: videoCodec.codec,
     width,
     height,
     bitrate: Math.max(2_000_000, Math.round(width * height * fps * 0.08)),
@@ -174,9 +192,11 @@ export async function exportSequenceToWebm(
   });
 
   onProgress?.({ phase: 'rendering', progress: audioMix ? 0.4 : 0 });
+  await new Promise<void>((resolve) => setTimeout(resolve, 0));
 
   const videoProgressStart = audioMix ? 0.4 : 0;
   const videoProgressSpan = audioMix ? 0.55 : 1;
+  let lastSeekKey = '';
 
   for (let outFrame = 0; outFrame < outputFrames; outFrame++) {
     throwIfAborted(signal);
@@ -187,11 +207,12 @@ export async function exportSequenceToWebm(
     if (active) {
       const video = videos.get(active.clip.assetId);
       if (video) {
-        await seekVideoForExport(
-          video,
-          sourceTimeForFrame(active.clip, seqFrame, sequence.frameRate),
-          signal,
-        );
+        const seconds = sourceTimeForFrame(active.clip, seqFrame, sequence.frameRate);
+        const seekKey = `${active.clip.id}:${seqFrame}`;
+        if (seekKey !== lastSeekKey) {
+          await seekVideoForExport(video, seconds, signal);
+          lastSeekKey = seekKey;
+        }
         drawProgramFrame(ctx, drawOptions, active.clip, video);
       } else {
         drawGapFrame(ctx, width, height);
@@ -206,11 +227,16 @@ export async function exportSequenceToWebm(
     });
     encoder.encode(videoFrame, { keyFrame: outFrame % keyFrameInterval === 0 });
     videoFrame.close();
+    await drainVideoEncoder(encoder);
 
     onProgress?.({
       phase: 'rendering',
       progress: videoProgressStart + ((outFrame + 1) / outputFrames) * videoProgressSpan,
     });
+
+    if (outFrame % 4 === 0) {
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    }
   }
 
   await encoder.flush();

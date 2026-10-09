@@ -2,6 +2,7 @@ import { formatDisplayTime, formatFrameRate, getSequenceDuration } from '@timeli
 import { cn } from '@timeline/ui';
 import { AlertTriangle, CheckCircle2, Info, Loader2, XCircle } from 'lucide-react';
 import { useEffect } from 'react';
+import { PlaybackDecodeScaleSelect } from '../components/PlaybackDecodeScaleSelect';
 import { TimeDisplayFormatSelect } from '../components/TimeDisplayFormatSelect';
 import { useTimeDisplayFormat } from '../hooks/use-format-display-time';
 import { useProjectState, useRuntime, useUiState } from '../runtime/context';
@@ -90,6 +91,7 @@ export function StatusBar() {
         <Tasks />
       </div>
       <SequenceInfo />
+      <PlaybackDecodeScaleSelect />
       <TimeDisplayFormatSelect />
       <span className={dirty ? 'text-warning' : 'text-fg-subtle'}>
         {dirty ? 'Unsaved changes' : location ? 'Saved' : 'Not saved yet'}

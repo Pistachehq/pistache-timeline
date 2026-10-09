@@ -38,6 +38,11 @@
   --color-accent-fg: #ffffff;
 
   --color-playhead: #4c9bff;
+  /* Razor blade pointing left; hotspot at the tip (cut point). */
+  --cursor-razor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none'%3E%3Cpath d='M2 12 16 4.5v15Z' fill='%23e2e2e8' stroke='%23ffffff' stroke-width='1.25' stroke-linejoin='round'/%3E%3Cpath d='M2 12 16 9' stroke='%23ffffff' stroke-width='0.75' opacity='0.55'/%3E%3Cpath d='M16 8.5h5.5a1.25 1.25 0 0 1 1.25 1.25v4.5A1.25 1.25 0 0 1 21.5 15.5H16' fill='%235a5a62' stroke='%23b0b0b8' stroke-width='1'/%3E%3C/svg%3E")
+    2 12,
+    crosshair;
+
   --color-clip-video: #5b5bd6;
   --color-clip-video-strong: #7373e6;
   --color-clip-audio: #2f9e6b;
@@ -52,6 +57,10 @@
   --radius-md: 4px;
 
   --shadow-popover: 0 8px 24px rgb(0 0 0 / 0.45), 0 0 0 1px rgb(255 255 255 / 0.04);
+}
+
+@utility cursor-razor {
+  cursor: var(--cursor-razor);
 }
 
 @layer base {

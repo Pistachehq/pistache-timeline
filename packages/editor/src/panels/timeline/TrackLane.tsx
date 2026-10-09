@@ -23,6 +23,7 @@ import { type DragEvent, memo, useMemo, useState } from 'react';
 import { useRuntime, useUiState } from '../../runtime/context';
 
 import { ASSET_DRAG_TYPE } from '../dnd';
+import { filesFromDataTransfer, isOsFileDrag } from '../file-drop';
 
 import { ClipItem } from './ClipItem';
 
@@ -76,6 +77,8 @@ export const TrackLane = memo(function TrackLane({
 
   const [dropFrame, setDropFrame] = useState<number | null>(null);
 
+  const clipDrag = useUiState((s) => s.clipDrag);
+
   const clips = useMemo(
 
     () => getClipsInRange(sequence, track, visibleRange.start, visibleRange.end),
@@ -84,18 +87,28 @@ export const TrackLane = memo(function TrackLane({
 
   );
 
+  const dragGhostClips = useMemo(() => {
+    if (!clipDrag) return [];
+    return clipDrag.previews
+      .filter((preview) => {
+        if (preview.trackId !== track.id) return false;
+        const home = sequence.clips[preview.clipId];
+        return home !== undefined && home.trackId !== track.id;
+      })
+      .map((preview) => sequence.clips[preview.clipId]!)
+      .filter((clip): clip is NonNullable<typeof clip> => clip !== undefined);
+  }, [clipDrag, sequence, track.id]);
 
 
-  const acceptsDrag = (event: DragEvent<HTMLDivElement>): boolean => {
 
+  const acceptsOsFileDrag = (event: DragEvent<HTMLDivElement>): boolean =>
+    !track.locked && isOsFileDrag(event.dataTransfer);
+
+  const acceptsAssetDrag = (event: DragEvent<HTMLDivElement>): boolean => {
     if (track.locked || !event.dataTransfer.types.includes(ASSET_DRAG_TYPE)) return false;
-
     const assetId = runtime.stores.ui.getState().assetDrag;
-
     const asset = assetId ? runtime.stores.project.getState().project.mediaAssets[assetId] : undefined;
-
     return !!asset && (track.kind === 'video' ? asset.hasVideo : asset.hasAudio);
-
   };
 
 
@@ -154,7 +167,7 @@ export const TrackLane = memo(function TrackLane({
 
       className={cn(
 
-        'relative shrink-0 border-b border-line',
+        'relative shrink-0 overflow-hidden border-b border-line',
 
         track.kind === 'video' ? 'bg-surface-1' : 'bg-[#17181b]',
 
@@ -197,15 +210,10 @@ export const TrackLane = memo(function TrackLane({
       }}
 
       onDragOver={(event) => {
-
-        if (!acceptsDrag(event)) return;
-
+        if (!acceptsOsFileDrag(event) && !acceptsAssetDrag(event)) return;
         event.preventDefault();
-
         event.dataTransfer.dropEffect = 'copy';
-
         setDropFrame(frameAtClientX(event.clientX, event.currentTarget));
-
       }}
 
       onDragLeave={() => {
@@ -217,29 +225,27 @@ export const TrackLane = memo(function TrackLane({
       }}
 
       onDrop={(event) => {
-
-        const frame = dropFrame;
-
+        const frame = dropFrame ?? frameAtClientX(event.clientX, event.currentTarget);
         setDropFrame(null);
-
         clearSnapGuides();
 
+        if (acceptsOsFileDrag(event)) {
+          event.preventDefault();
+          const files = filesFromDataTransfer(event.dataTransfer);
+          void (async () => {
+            const assets = await runtime.actions.media.importLocalFiles(files);
+            for (const asset of assets) {
+              const compatible = track.kind === 'video' ? asset.hasVideo : asset.hasAudio;
+              if (compatible) runtime.actions.edit.placeAssetOnTrack(asset.id, track.id, frame);
+            }
+          })();
+          return;
+        }
+
         const assetId = event.dataTransfer.getData(ASSET_DRAG_TYPE);
-
-        if (!assetId || !acceptsDrag(event)) return;
-
+        if (!assetId || !acceptsAssetDrag(event)) return;
         event.preventDefault();
-
-        runtime.actions.edit.placeAssetOnTrack(
-
-          assetId as MediaAssetId,
-
-          track.id,
-
-          frame ?? frameAtClientX(event.clientX, event.currentTarget),
-
-        );
-
+        runtime.actions.edit.placeAssetOnTrack(assetId as MediaAssetId, track.id, frame);
       }}
 
     >
@@ -247,6 +253,19 @@ export const TrackLane = memo(function TrackLane({
       {clips.map((clip) => (
 
         <ClipItem key={clip.id} clip={clip} track={track} pixelsPerFrame={pixelsPerFrame} frameRate={frameRate} />
+
+      ))}
+
+      {dragGhostClips.map((clip) => (
+
+        <ClipItem
+          key={`drag-ghost-${clip.id}`}
+          clip={clip}
+          track={track}
+          pixelsPerFrame={pixelsPerFrame}
+          frameRate={frameRate}
+          dragGhost
+        />
 
       ))}
 

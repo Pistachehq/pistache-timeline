@@ -10,6 +10,7 @@ import {
   removeClips,
   setClipEnabled,
   splitClip,
+  trimClip,
   updateClipAudio,
   updateClipTransform,
 } from './clips';
@@ -133,6 +134,21 @@ describe('splitClip and removeClips', () => {
     expect(getClipEnd(left)).toBe(right.start);
     expect(next.videoTracks[0]!.clipIds).toEqual([CLIP_A, CLIP_B]);
     expect(getSeamlessClipSuccessor(next, left)?.id).toBe(CLIP_B);
+  });
+
+  it('trims clip start and end', () => {
+    const { project } = withClip();
+    const sequence = activeSequence(project);
+    const trimmedStart = activeSequence(
+      unwrap(trimClip(project, { sequenceId: sequence.id, clipId: CLIP_A, edge: 'start', frame: 30 })),
+    );
+    expect(trimmedStart.clips[CLIP_A]!.start).toBe(30);
+    expect(trimmedStart.clips[CLIP_A]!.sourceIn).toBe(30);
+    const projectAfterStart = unwrap(trimClip(project, { sequenceId: sequence.id, clipId: CLIP_A, edge: 'start', frame: 30 }));
+    const trimmedEnd = activeSequence(
+      unwrap(trimClip(projectAfterStart, { sequenceId: sequence.id, clipId: CLIP_A, edge: 'end', frame: 270 })),
+    );
+    expect(trimmedEnd.clips[CLIP_A]!.sourceOut).toBe(270);
   });
 
   it('rejects split points on clip boundaries', () => {

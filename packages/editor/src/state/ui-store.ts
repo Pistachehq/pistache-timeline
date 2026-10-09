@@ -4,6 +4,8 @@ import { createStore, type StoreApi } from 'zustand/vanilla';
 
 export type EditTool = 'select' | 'razor';
 export type MonitorScale = 'fit' | '25' | '50' | '100';
+/** Scales program-monitor decode size (lighter playback on long/high-res clips). */
+export type PlaybackDecodeScale = '1' | '0.5' | '0.25' | '0.125';
 export type TimeDisplayFormat = 'timecode' | 'frames';
 export type StatusTone = 'info' | 'success' | 'warning' | 'error';
 
@@ -29,6 +31,19 @@ export interface ClipDragPreview {
 export interface ClipDragState {
   readonly primaryClipId: ClipId;
   readonly previews: readonly ClipDragPreview[];
+}
+
+export interface ClipTrimPreview {
+  readonly clipId: ClipId;
+  readonly start: number;
+  readonly sourceIn: number;
+  readonly sourceOut: number;
+}
+
+export interface ClipTrimState {
+  readonly primaryClipId: ClipId;
+  readonly edge: 'start' | 'end';
+  readonly previews: readonly ClipTrimPreview[];
 }
 
 export interface MarqueeState {
@@ -58,6 +73,7 @@ export interface UiState {
   readonly tool: EditTool;
   readonly pixelsPerFrame: number;
   readonly programScale: MonitorScale;
+  readonly playbackDecodeScale: PlaybackDecodeScale;
   readonly timeDisplayFormat: TimeDisplayFormat;
   readonly snapEnabled: boolean;
   readonly snapGuideFrames: readonly number[];
@@ -65,12 +81,14 @@ export interface UiState {
   readonly status: StatusMessage | null;
   readonly tasks: readonly BackgroundTask[];
   readonly clipDrag: ClipDragState | null;
+  readonly clipTrim: ClipTrimState | null;
   readonly marquee: MarqueeState | null;
   readonly assetDrag: MediaAssetId | null;
 
   setTool(tool: EditTool): void;
   setZoom(pixelsPerFrame: number): void;
   setProgramScale(scale: MonitorScale): void;
+  setPlaybackDecodeScale(scale: PlaybackDecodeScale): void;
   setTimeDisplayFormat(format: TimeDisplayFormat): void;
   setSnapEnabled(enabled: boolean): void;
   setSnapGuideFrames(frames: readonly number[]): void;
@@ -83,6 +101,7 @@ export interface UiState {
   startTask(label: string): string;
   endTask(id: string): void;
   setClipDrag(drag: ClipDragState | null): void;
+  setClipTrim(trim: ClipTrimState | null): void;
   setMarquee(marquee: MarqueeState | null): void;
   setAssetDrag(assetId: MediaAssetId | null): void;
 }
@@ -94,6 +113,7 @@ export function createUiStore(): UiStore {
     tool: 'select',
     pixelsPerFrame: DEFAULT_PIXELS_PER_FRAME,
     programScale: 'fit',
+    playbackDecodeScale: '1',
     timeDisplayFormat: 'timecode',
     snapEnabled: true,
     snapGuideFrames: [],
@@ -101,12 +121,14 @@ export function createUiStore(): UiStore {
     status: null,
     tasks: [],
     clipDrag: null,
+    clipTrim: null,
     marquee: null,
     assetDrag: null,
 
     setTool: (tool) => set({ tool }),
     setZoom: (pixelsPerFrame) => set({ pixelsPerFrame: clampZoom(pixelsPerFrame) }),
     setProgramScale: (programScale) => set({ programScale }),
+    setPlaybackDecodeScale: (playbackDecodeScale) => set({ playbackDecodeScale }),
     setTimeDisplayFormat: (timeDisplayFormat) => set({ timeDisplayFormat }),
     setSnapEnabled: (snapEnabled) => set({ snapEnabled }),
     setSnapGuideFrames: (snapGuideFrames) => set({ snapGuideFrames }),
@@ -146,6 +168,7 @@ export function createUiStore(): UiStore {
 
     endTask: (id) => set({ tasks: get().tasks.filter((task) => task.id !== id) }),
     setClipDrag: (clipDrag) => set({ clipDrag }),
+    setClipTrim: (clipTrim) => set({ clipTrim }),
     setMarquee: (marquee) => set({ marquee }),
     setAssetDrag: (assetDrag) => set({ assetDrag }),
   }));

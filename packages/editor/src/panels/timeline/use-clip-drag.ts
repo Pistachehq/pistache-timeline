@@ -1,5 +1,5 @@
-import { getActiveSequence, type Clip, pixelToFrame, type Track, type TrackId } from '@timeline/core';
-import { type PointerEvent, useRef } from 'react';
+import { getActiveSequence, type Clip, type Track, type TrackId } from '@timeline/core';
+import { type PointerEvent as ReactPointerEvent, useRef } from 'react';
 import { useRuntime } from '../../runtime/context';
 import { buildDragPreviews, expandMovingClips } from './clip-drag-group';
 import { snapClipDrag, snapTimelineFrame } from './timeline-snap';
@@ -11,20 +11,24 @@ interface Gesture {
   readonly x: number;
   readonly y: number;
   readonly laneTop: number;
+  readonly primary: Clip;
+  readonly kind: Track['kind'];
   readonly onKeyDown: (event: KeyboardEvent) => void;
+  readonly onMove: (event: globalThis.PointerEvent) => void;
+  readonly onUp: (event: globalThis.PointerEvent) => void;
   readonly moving: readonly Clip[];
   dragging: boolean;
-  trackId: TrackId;
-  offsetY: number;
+  destTrackId: TrackId;
 }
 
-/** Finds the lane under a viewport Y coordinate that can receive a clip of `kind`. */
+/** Track row under `clientY` that accepts clips of `kind` (header + lane). */
 function laneAt(clientY: number, kind: Track['kind']): { trackId: TrackId; top: number } | null {
-  for (const lane of document.querySelectorAll<HTMLElement>('[data-track-lane]')) {
-    const rect = lane.getBoundingClientRect();
+  for (const row of document.querySelectorAll<HTMLElement>('[data-track-row]')) {
+    const rect = row.getBoundingClientRect();
     if (clientY < rect.top || clientY >= rect.bottom) continue;
-    if (lane.dataset.trackKind !== kind || lane.dataset.trackLocked === 'true') return null;
-    return { trackId: lane.dataset.trackId as TrackId, top: rect.top };
+    if (row.dataset.trackKind !== kind || row.dataset.trackLocked === 'true') continue;
+    const lane = row.querySelector<HTMLElement>('[data-track-lane]');
+    return { trackId: row.dataset.trackId as TrackId, top: lane?.getBoundingClientRect().top ?? rect.top };
   }
   return null;
 }
@@ -34,7 +38,7 @@ const isAdditive = (event: { shiftKey: boolean; ctrlKey: boolean; metaKey: boole
 
 function laneFrameAt(clientX: number, lane: HTMLElement, pixelsPerFrame: number): number {
   const x = clientX - lane.getBoundingClientRect().left;
-  return pixelToFrame(x, pixelsPerFrame);
+  return Math.max(0, Math.round(x / pixelsPerFrame));
 }
 
 /**
@@ -48,12 +52,48 @@ export function useClipDrag(clip: Clip, track: Track, pixelsPerFrame: number) {
 
   const clearSnapGuides = () => runtime.stores.ui.getState().setSnapGuideFrames([]);
 
+  const removeWindowListeners = (g: Gesture) => {
+    window.removeEventListener('pointermove', g.onMove);
+    window.removeEventListener('pointerup', g.onUp);
+    window.removeEventListener('pointercancel', g.onUp);
+    window.removeEventListener('keydown', g.onKeyDown, true);
+  };
+
   const end = () => {
     const g = gesture.current;
-    if (g) window.removeEventListener('keydown', g.onKeyDown, true);
+    if (g) removeWindowListeners(g);
     gesture.current = null;
     runtime.stores.ui.getState().setClipDrag(null);
     clearSnapGuides();
+  };
+
+  const publishDrag = (g: Gesture, clientX: number, clientY: number) => {
+    const { ui, project, playback } = runtime.stores;
+    const sequence = getActiveSequence(project.getState().project);
+    if (!sequence) return;
+
+    const target = laneAt(clientY, g.kind);
+    if (target) g.destTrackId = target.trackId;
+
+    const offsetY = target ? target.top - g.laneTop : 0;
+    const dx = clientX - g.x;
+    let start = Math.max(0, g.primary.start + Math.round(dx / pixelsPerFrame));
+    const excludeIds = g.moving.map((c) => c.id);
+    const snapped = snapClipDrag(
+      sequence,
+      g.primary,
+      start,
+      playback.getState().playhead,
+      pixelsPerFrame,
+      ui.getState().snapEnabled,
+      excludeIds,
+    );
+    start = snapped.start;
+    ui.getState().setSnapGuideFrames(snapped.guides);
+    ui.getState().setClipDrag({
+      primaryClipId: g.primary.id,
+      previews: buildDragPreviews(sequence, g.moving, g.primary, start, g.destTrackId, offsetY),
+    });
   };
 
   const snapRazorFrame = (lane: HTMLElement, clientX: number): number => {
@@ -70,7 +110,7 @@ export function useClipDrag(clip: Clip, track: Track, pixelsPerFrame: number) {
     return snapped.frame;
   };
 
-  const onPointerDown = (event: PointerEvent<HTMLElement>) => {
+  const onPointerDown = (event: ReactPointerEvent<HTMLElement>) => {
     if (event.button !== 0) return;
     event.stopPropagation();
     const { ui, selection, project } = runtime.stores;
@@ -96,85 +136,76 @@ export function useClipDrag(clip: Clip, track: Track, pixelsPerFrame: number) {
     const sequence = getActiveSequence(project.getState().project);
     if (!sequence) return;
 
+    if (gesture.current) end();
+    ui.getState().setClipDrag(null);
+
     event.currentTarget.setPointerCapture(event.pointerId);
+
     const onKeyDown = (keyEvent: KeyboardEvent) => {
       if (keyEvent.key !== 'Escape') return;
       keyEvent.stopPropagation();
       end();
     };
+
+    const onMove = (moveEvent: globalThis.PointerEvent) => {
+      const g = gesture.current;
+      if (!g || moveEvent.pointerId !== g.pointerId) return;
+      const dx = moveEvent.clientX - g.x;
+      if (!g.dragging) {
+        if (Math.abs(dx) < DRAG_THRESHOLD_PX && Math.abs(moveEvent.clientY - g.y) < DRAG_THRESHOLD_PX) return;
+        g.dragging = true;
+      }
+      publishDrag(g, moveEvent.clientX, moveEvent.clientY);
+    };
+
+    const onUp = (upEvent: globalThis.PointerEvent) => {
+      const g = gesture.current;
+      if (!g || upEvent.pointerId !== g.pointerId) return;
+
+      const { project: projectStore } = runtime.stores;
+      const sequenceOnUp = getActiveSequence(projectStore.getState().project);
+      let previews = runtime.stores.ui.getState().clipDrag?.previews ?? [];
+
+      if (g.dragging && sequenceOnUp) {
+        publishDrag(g, upEvent.clientX, upEvent.clientY);
+        previews = runtime.stores.ui.getState().clipDrag?.previews ?? [];
+      }
+
+      end();
+
+      if (g.dragging && previews.length > 0) {
+        const changed = previews.some((preview) => {
+          const original = g.moving.find((c) => c.id === preview.clipId);
+          return original && (preview.start !== original.start || preview.trackId !== original.trackId);
+        });
+        if (changed) runtime.actions.edit.moveClipGroup(previews);
+      } else if (!g.dragging) {
+        const { selection: sel } = runtime.stores;
+        sel.getState().selectClips([clip.id]);
+        sel.getState().selectAsset(clip.assetId);
+      }
+    };
+
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
     window.addEventListener('keydown', onKeyDown, true);
+
     gesture.current = {
       pointerId: event.pointerId,
       x: event.clientX,
       y: event.clientY,
       laneTop: lane.getBoundingClientRect().top,
+      primary: clip,
+      kind: track.kind,
       onKeyDown,
+      onMove,
+      onUp,
       moving: expandMovingClips(sequence, clip, selection.getState().clipIds),
       dragging: false,
-      trackId: track.id,
-      offsetY: 0,
+      destTrackId: track.id,
     };
   };
 
-  const onPointerMove = (event: PointerEvent<HTMLElement>) => {
-    const g = gesture.current;
-    if (g?.pointerId !== event.pointerId) return;
-    const dx = event.clientX - g.x;
-    if (!g.dragging) {
-      if (Math.abs(dx) < DRAG_THRESHOLD_PX && Math.abs(event.clientY - g.y) < DRAG_THRESHOLD_PX) return;
-      g.dragging = true;
-    }
-    const target = laneAt(event.clientY, track.kind);
-    if (target) {
-      g.trackId = target.trackId;
-      g.offsetY = target.top - g.laneTop;
-    }
-
-    const { ui, project, playback } = runtime.stores;
-    const sequence = getActiveSequence(project.getState().project);
-    let start = Math.max(0, clip.start + Math.round(dx / pixelsPerFrame));
-    let guides: readonly number[] = [];
-    if (sequence) {
-      const excludeIds = g.moving.map((c) => c.id);
-      const snapped = snapClipDrag(
-        sequence,
-        clip,
-        start,
-        playback.getState().playhead,
-        pixelsPerFrame,
-        ui.getState().snapEnabled,
-        excludeIds,
-      );
-      start = snapped.start;
-      guides = snapped.guides;
-    }
-    ui.getState().setSnapGuideFrames(guides);
-    ui.getState().setClipDrag({
-      primaryClipId: clip.id,
-      previews: buildDragPreviews(g.moving, clip, start, g.trackId, g.offsetY),
-    });
-  };
-
-  const onPointerUp = (event: PointerEvent<HTMLElement>) => {
-    const g = gesture.current;
-    if (g?.pointerId !== event.pointerId) return;
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    }
-    const drag = runtime.stores.ui.getState().clipDrag;
-    end();
-    if (g.dragging && drag && drag.previews.length > 0) {
-      const changed = drag.previews.some((preview) => {
-        const original = g.moving.find((c) => c.id === preview.clipId);
-        return original && (preview.start !== original.start || preview.trackId !== original.trackId);
-      });
-      if (changed) runtime.actions.edit.moveClipGroup(drag.previews);
-    } else if (!g.dragging) {
-      const { selection } = runtime.stores;
-      selection.getState().selectClips([clip.id]);
-      selection.getState().selectAsset(clip.assetId);
-    }
-  };
-
-  return { onPointerDown, onPointerMove, onPointerUp, onPointerCancel: end };
+  return { onPointerDown, onPointerCancel: end };
 }

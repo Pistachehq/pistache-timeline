@@ -71,6 +71,42 @@ export function createDesktopMediaEngine(bridge: DesktopMediaBridge): MediaEngin
       return { files: picked, rejected };
     },
 
+    async importLocalFiles(files: readonly File[]) {
+      const picked: PickedMedia[] = [];
+      const rejected: RejectedMedia[] = [];
+      for (const file of files) {
+        const mimeType = guessMimeType(file.name);
+        const kind = detectMediaKind(file.name, mimeType);
+        if (!kind) {
+          rejected.push({ fileName: file.name, reason: 'Unsupported file type.' });
+          continue;
+        }
+        const path = (file as File & { path?: string }).path;
+        if (!path) {
+          rejected.push({ fileName: file.name, reason: 'Could not read the file path.' });
+          continue;
+        }
+        const desktopFile = await bridge.resolve(path);
+        if (!desktopFile) {
+          rejected.push({ fileName: file.name, reason: 'Could not access the file.' });
+          continue;
+        }
+        picked.push({
+          handle: track(desktopFile),
+          kind,
+          source: {
+            kind: 'local-file',
+            fileName: file.name,
+            size: file.size,
+            lastModified: file.lastModified,
+            mimeType,
+            path: desktopFile.path,
+          },
+        });
+      }
+      return { files: picked, rejected };
+    },
+
     async resolve(source: MediaSourceRef) {
       if (!source.path) return null;
       const file = await bridge.resolve(source.path);

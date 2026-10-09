@@ -22,6 +22,7 @@ import {
   type Sequence,
   setClipEnabled,
   splitClip,
+  trimClip,
   type TrackChanges,
   type TrackId,
   type TrackKind,
@@ -185,14 +186,18 @@ export function createEditActions(services: EditorServices) {
     ): boolean {
       if (previews.length === 0) return false;
       const label = previews.length > 1 ? 'Move Clips' : 'Move Clip';
-      return run(label, (project, sequence) => {
+      return run(label, (_project, sequence) => {
         const ordered = [...previews].sort((a, b) => {
           const ca = sequence.clips[a.clipId];
           const cb = sequence.clips[b.clipId];
+          const trackA = ca ? findTrack(sequence, ca.trackId) : undefined;
+          const trackB = cb ? findTrack(sequence, cb.trackId) : undefined;
+          const kindOrder = (trackA?.kind === 'video' ? 0 : 1) - (trackB?.kind === 'video' ? 0 : 1);
+          if (kindOrder !== 0) return kindOrder;
           return (ca?.start ?? 0) - (cb?.start ?? 0);
         });
         return chain(
-          project,
+          _project,
           ordered.map(
             (preview) => (p: Project) =>
               moveClip(p, {
@@ -274,6 +279,13 @@ export function createEditActions(services: EditorServices) {
 
     splitClipAt(clipId: ClipId, frame: number): boolean {
       return run('Split Clip', (project, sequence) => splitClip(project, { sequenceId: sequence.id, clipId, frame }));
+    },
+
+    trimClipToEdge(clipId: ClipId, edge: 'start' | 'end', frame: number): boolean {
+      const label = edge === 'start' ? 'Trim Clip Start' : 'Trim Clip End';
+      return run(label, (project, sequence) =>
+        trimClip(project, { sequenceId: sequence.id, clipId, edge, frame: Math.round(frame) }),
+      );
     },
 
     setClipTransform(clipId: ClipId, transform: Partial<ClipTransform>, label = 'Change Transform'): boolean {

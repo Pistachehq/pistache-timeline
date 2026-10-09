@@ -1,14 +1,13 @@
 import { type LocalFileSource, type MediaSourceRef } from '@timeline/core';
 import { createId } from '@timeline/shared';
 import { browserExportSupported, exportBrowserSequence } from './export-sequence';
-import { detectMediaKind, MEDIA_ACCEPT } from '../media-kind';
+import { MEDIA_ACCEPT } from '../media-kind';
 import {
   type MediaEngine,
   type MediaHandle,
-  type PickedMedia,
   type PickMediaResult,
-  type RejectedMedia,
 } from '../types';
+import { pickMediaFromFiles } from './import-local-files';
 import { pickFiles } from './file-picker';
 import { MediaElementPlayer } from './media-element-player';
 import { probeWithMediaElement } from './probe';
@@ -61,28 +60,11 @@ export function createWebMediaEngine(options: WebMediaEngineOptions = {}): Media
 
     async pickMedia({ multiple }): Promise<PickMediaResult> {
       const selected = await choose({ accept: MEDIA_ACCEPT, multiple });
-      const picked: PickedMedia[] = [];
-      const rejected: RejectedMedia[] = [];
-      for (const file of selected) {
-        const kind = detectMediaKind(file.name, file.type);
-        if (!kind) {
-          rejected.push({ fileName: file.name, reason: 'Unsupported file type.' });
-          continue;
-        }
-        picked.push({
-          handle: register(file),
-          kind,
-          source: {
-            kind: 'local-file',
-            fileName: file.name,
-            size: file.size,
-            lastModified: file.lastModified,
-            mimeType: file.type || null,
-            path: null,
-          },
-        });
-      }
-      return { files: picked, rejected };
+      return pickMediaFromFiles(selected, register);
+    },
+
+    importLocalFiles(files: readonly File[]): Promise<PickMediaResult> {
+      return Promise.resolve(pickMediaFromFiles(files, register));
     },
 
     resolve(source: MediaSourceRef): Promise<MediaHandle | null> {

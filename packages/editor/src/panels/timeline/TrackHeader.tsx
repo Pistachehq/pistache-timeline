@@ -12,7 +12,7 @@ export const TrackHeader = memo(function TrackHeader({ track, height }: { track:
 
   return (
     <div
-      className="sticky left-0 z-20 flex shrink-0 items-center gap-1 border-r border-b border-line bg-surface-2 pr-1"
+      className="sticky left-0 z-[25] flex shrink-0 items-center gap-1 border-r border-b border-line bg-surface-2 pr-1"
       style={{ width: TRACK_HEADER_WIDTH, height }}
       data-testid={`track-header-${track.name}`}
     >

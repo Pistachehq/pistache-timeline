@@ -247,6 +247,88 @@ function clearClipLink(sequence: Sequence, clipId: ClipId): Sequence {
   return { ...sequence, clips: { ...sequence.clips, [clipId]: { ...clip, linkId: null } } };
 }
 
+const MIN_CLIP_DURATION_FRAMES = 1;
+
+export interface TrimClipInput {
+  readonly sequenceId: SequenceId;
+  readonly clipId: ClipId;
+  readonly edge: 'start' | 'end';
+  /** New in/out point on the sequence (inside the clip). */
+  readonly frame: number;
+}
+
+function trimClipInSequence(
+  sequence: Sequence,
+  clipId: ClipId,
+  edge: 'start' | 'end',
+  frame: number,
+  assetFrameCount: number,
+): Result<Sequence, TimelineError> {
+  const clip = sequence.clips[clipId];
+  if (!clip) return fail('NOT_FOUND', `Clip ${clipId} does not exist.`);
+  const track = findTrack(sequence, clip.trackId);
+  if (track?.locked) return fail('LOCKED', `Track ${track.name} is locked.`);
+  const end = getClipEnd(clip);
+  if (!Number.isInteger(frame)) return fail('INVALID_ARGUMENT', 'Trim frame must be an integer.');
+
+  let next: Clip;
+  if (edge === 'start') {
+    const minStart = Math.max(0, clip.start - clip.sourceIn);
+    if (frame < minStart || frame > end - MIN_CLIP_DURATION_FRAMES) {
+      return fail('INVALID_ARGUMENT', 'Trim start must stay inside the clip and media bounds.');
+    }
+    const delta = frame - clip.start;
+    const sourceIn = clip.sourceIn + delta;
+    if (sourceIn < 0 || sourceIn >= clip.sourceOut) {
+      return fail('INVALID_ARGUMENT', 'Trim start exceeds the media duration.');
+    }
+    next = { ...clip, start: frame, sourceIn };
+  } else {
+    const minEnd = clip.start + MIN_CLIP_DURATION_FRAMES;
+    const maxEnd = clip.start + (assetFrameCount - clip.sourceIn);
+    if (frame < minEnd || frame > maxEnd) {
+      return fail('INVALID_ARGUMENT', 'Trim end must stay inside the clip and media bounds.');
+    }
+    const sourceOut = clip.sourceIn + (frame - clip.start);
+    if (sourceOut <= clip.sourceIn || sourceOut > assetFrameCount) {
+      return fail('INVALID_ARGUMENT', 'Trim end exceeds the media duration.');
+    }
+    next = { ...clip, sourceOut };
+  }
+
+  const clips = { ...sequence.clips, [clipId]: next };
+  return ok({ ...sequence, clips });
+}
+
+/** Trims a clip from the start or end. Linked partner is trimmed when aligned. */
+export function trimClip(project: Project, input: TrimClipInput): EditResult {
+  return updateSequence(project, input.sequenceId, (sequence) => {
+    const clip = sequence.clips[input.clipId];
+    if (!clip) return fail('NOT_FOUND', `Clip ${input.clipId} does not exist.`);
+
+    const asset = project.mediaAssets[clip.assetId];
+    if (!asset) return fail('NOT_FOUND', 'Media for this clip is missing.');
+    const available = getAssetFrameCount(asset, sequence);
+
+    const first = trimClipInSequence(sequence, input.clipId, input.edge, input.frame, available);
+    if (!first.ok) return first;
+
+    let next = first.value;
+    const partnerId = clip.linkId;
+    if (partnerId) {
+      const partner = next.clips[partnerId];
+      if (partner && partner.start === clip.start && getClipEnd(partner) === getClipEnd(clip)) {
+        const partnerAsset = project.mediaAssets[partner.assetId];
+        const partnerAvailable = partnerAsset ? getAssetFrameCount(partnerAsset, sequence) : available;
+        const second = trimClipInSequence(next, partnerId, input.edge, input.frame, partnerAvailable);
+        if (!second.ok) return second;
+        next = second.value;
+      }
+    }
+    return ok(next);
+  });
+}
+
 /** Cuts a clip in two at `frame`. Linked clips on the paired track are split too. */
 export function splitClip(project: Project, input: SplitClipInput): EditResult {
   return updateSequence(project, input.sequenceId, (sequence) => {

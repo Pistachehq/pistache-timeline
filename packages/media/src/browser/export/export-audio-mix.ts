@@ -102,6 +102,10 @@ export async function mixSequenceAudio(
 
   for (let sample = 0; sample < totalSamples; sample++) {
     throwIfAborted(signal);
+    if (sample > 0 && sample % EXPORT_AUDIO_SAMPLE_RATE === 0) {
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      options.onProgress?.({ phase: 'audio', progress: (sample / totalSamples) * 0.2 });
+    }
     const t = sample / EXPORT_AUDIO_SAMPLE_RATE;
     const seqFrame = Math.min(
       getSequenceDuration(sequence) - 1,
