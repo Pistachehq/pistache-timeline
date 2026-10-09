@@ -1,6 +1,10 @@
 import {
+  cssBlurFilter,
   findTrack,
+  getBlurVideoEffect,
   getStackedVideoClipsAt,
+  insetClipPathFromRegion,
+  isRegionalBlurEffect,
   TRANSFORM_LIMITS,
   type ActiveVideoClip,
   type Clip,
@@ -8,7 +12,14 @@ import {
   type Sequence,
 } from '@timeline/core';
 import { clamp } from '@timeline/shared';
-import { useCallback, useEffect, useMemo, useRef, type PointerEvent as ReactPointerEvent } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+} from 'react';
 import { useElementSize } from '../../hooks/use-element-size';
 import { playbackDecodeFactor, programVideoDecodeSize } from '../../playback/playback-decode';
 import { sourceTimeForFrame } from '../../playback/frame-math';
@@ -21,6 +32,7 @@ import {
   useUiState,
 } from '../../runtime/context';
 import { hitTestProgramClipAt, letterboxMediaSize, programClipWrapperStyle } from './program-clip-layout';
+import { ProgramBlurOverlay } from './ProgramBlurOverlay';
 import { ProgramCropOverlay } from './ProgramCropOverlay';
 import { ProgramTransformOverlay } from './ProgramTransformOverlay';
 
@@ -86,6 +98,9 @@ function CompositeLayer({
   const entry = useMediaState((s) => s.entries[clip.assetId]);
   const selected = useSelectionState((s) => s.clipIds.includes(clip.id));
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const blurCopyRef = useRef<HTMLVideoElement | null>(null);
+  const blurEffect = getBlurVideoEffect(clip.effects.video);
+  const regionalBlur = blurEffect && blurEffect.region && isRegionalBlurEffect(blurEffect) ? blurEffect : null;
   const url = entry?.status === 'online' && entry.handle ? entry.handle.url : null;
   const isImage = asset?.kind === 'image';
 
@@ -121,6 +136,29 @@ function CompositeLayer({
     }
   }, [decode.height, decode.width, isImage, decodeFactor]);
 
+  useEffect(() => {
+    const copy = blurCopyRef.current;
+    const main = videoRef.current;
+    if (!copy || !main || !regionalBlur) return;
+    const sync = () => {
+      if (main.src && copy.src !== main.src) copy.src = main.src;
+      if (Number.isFinite(main.currentTime) && Math.abs(copy.currentTime - main.currentTime) > 0.08) {
+        copy.currentTime = main.currentTime;
+      }
+      if (main.paused) copy.pause();
+      else void copy.play().catch(() => undefined);
+    };
+    sync();
+    main.addEventListener('seeked', sync);
+    main.addEventListener('play', sync);
+    main.addEventListener('pause', sync);
+    return () => {
+      main.removeEventListener('seeked', sync);
+      main.removeEventListener('play', sync);
+      main.removeEventListener('pause', sync);
+    };
+  }, [regionalBlur, url, playhead]);
+
   if (!asset || !url || box.width <= 0 || box.height <= 0) return null;
 
   const wrapperStyle = {
@@ -129,6 +167,64 @@ function CompositeLayer({
   };
 
   const mediaClass = 'pointer-events-none block h-full w-full object-fill';
+  const blurFilter = regionalBlur ? cssBlurFilter(regionalBlur.amount) : undefined;
+  const maskPath = regionalBlur?.region ? insetClipPathFromRegion(regionalBlur.region) : undefined;
+
+  const imageEl = <img src={url} alt="" draggable={false} className={mediaClass} decoding="async" />;
+  const videoEl = (
+    <video
+      ref={bindVideo}
+      muted
+      playsInline
+      preload="auto"
+      className={mediaClass}
+      width={decode.width}
+      height={decode.height}
+    />
+  );
+  const imageCopy = <img src={url} alt="" draggable={false} className={mediaClass} decoding="async" />;
+  const videoCopy = (
+    <video
+      ref={blurCopyRef}
+      muted
+      playsInline
+      preload="auto"
+      className={mediaClass}
+      width={decode.width}
+      height={decode.height}
+    />
+  );
+
+  let mediaBody: ReactNode;
+  if (regionalBlur && blurFilter && maskPath && regionalBlur.region) {
+    const sharp = isImage ? imageEl : videoEl;
+    const copy = isImage ? imageCopy : videoCopy;
+    if (regionalBlur.region.internal) {
+      mediaBody = (
+        <div className="relative h-full w-full">
+          {sharp}
+          <div className="pointer-events-none absolute inset-0 overflow-hidden" style={{ clipPath: maskPath }}>
+            <div className="h-full w-full" style={{ filter: blurFilter }}>
+              {copy}
+            </div>
+          </div>
+        </div>
+      );
+    } else {
+      mediaBody = (
+        <div className="relative h-full w-full">
+          <div className="h-full w-full" style={{ filter: blurFilter }}>
+            {sharp}
+          </div>
+          <div className="pointer-events-none absolute inset-0 overflow-hidden" style={{ clipPath: maskPath }}>
+            {copy}
+          </div>
+        </div>
+      );
+    }
+  } else {
+    mediaBody = isImage ? imageEl : videoEl;
+  }
 
   return (
     <div
@@ -136,19 +232,7 @@ function CompositeLayer({
       className={'pointer-events-none absolute' + (selected ? ' ring-1 ring-accent/40' : '')}
       style={wrapperStyle}
     >
-      {isImage ? (
-        <img src={url} alt="" draggable={false} className={mediaClass} decoding="async" />
-      ) : (
-        <video
-          ref={bindVideo}
-          muted
-          playsInline
-          preload="auto"
-          className={mediaClass}
-          width={decode.width}
-          height={decode.height}
-        />
-      )}
+      {mediaBody}
     </div>
   );
 }
@@ -166,11 +250,16 @@ export function ProgramCompositeLayers({ sequence }: { readonly sequence: Sequen
   const selectedIds = useSelectionState((s) => s.clipIds);
   const selectedId = selectedIds.length === 1 ? selectedIds[0] : null;
   const cropEditId = useUiState((s) => s.clipCropEditId);
+  const blurEditId = useUiState((s) => s.clipBlurEditId);
   const setCropEditId = runtime.stores.ui.getState().setClipCropEditId;
+  const setBlurEditId = runtime.stores.ui.getState().setClipBlurEditId;
 
   useEffect(() => {
     if (cropEditId && selectedId !== cropEditId) setCropEditId(null);
   }, [cropEditId, selectedId, setCropEditId]);
+  useEffect(() => {
+    if (blurEditId && selectedId !== blurEditId) setBlurEditId(null);
+  }, [blurEditId, selectedId, setBlurEditId]);
   const stack = useMemo(() => getStackedVideoClipsAt(sequence, playhead), [sequence, playhead]);
   const mediaAssets = useProjectState((s) => s.project.mediaAssets);
 
@@ -310,7 +399,16 @@ export function ProgramCompositeLayers({ sequence }: { readonly sequence: Sequen
           zIndex={(selectedStackIndex + 1) * LAYER_Z + 20}
         />
       ) : null}
-      {selectedId && selectedStackIndex >= 0 && !cropEditId ? (
+      {blurEditId ? (
+        <ProgramBlurOverlay
+          sequence={sequence}
+          frameRef={containerRef}
+          playhead={playhead}
+          clipId={blurEditId}
+          zIndex={(selectedStackIndex + 1) * LAYER_Z + 21}
+        />
+      ) : null}
+      {selectedId && selectedStackIndex >= 0 && !cropEditId && !blurEditId ? (
         <ProgramTransformOverlay
           sequence={sequence}
           frameRef={containerRef}

@@ -1,7 +1,10 @@
 import {
   clipPathFromVideoEffects,
+  clipTransitionPaint,
   cssFilterFromVideoEffects,
   effectiveClipOpacityPercent,
+  libraryEffectClipPath,
+  libraryEffectTransform,
   type ActiveVideoClip,
   type Clip,
   type ClipId,
@@ -60,14 +63,17 @@ export function programClipWrapperStyle(
   const seq = sequence.resolution;
   const px = frameWidth > 0 ? (t.positionX / seq.width) * frameWidth : 0;
   const py = frameHeight > 0 ? (t.positionY / seq.height) * frameHeight : 0;
-  const filter = cssFilterFromVideoEffects(clip.effects.video);
-  const clipPath = clipPathFromVideoEffects(clip.effects.video);
+  const paint = clipTransitionPaint(clip, sequenceFrame);
+  const filter = [cssFilterFromVideoEffects(clip.effects.video), paint.filter].filter(Boolean).join(' ');
+  const effectPath = clipPathFromVideoEffects(clip.effects.video) ?? libraryEffectClipPath(clip.effects.video);
+  const clipPath = paint.clipPath ?? effectPath;
+  const extraTransform = [libraryEffectTransform(clip.effects.video), paint.transform].filter(Boolean).join(' ');
   return {
     left: '50%',
     top: '50%',
     width: boxWidth,
     height: boxHeight,
-    transform: `translate(-50%, -50%) translate(${px}px, ${py}px) rotate(${t.rotation}deg) scale(${t.scaleX / 100}, ${t.scaleY / 100})`,
+    transform: `translate(-50%, -50%) translate(${px}px, ${py}px) rotate(${t.rotation}deg) scale(${t.scaleX / 100}, ${t.scaleY / 100})${extraTransform ? ` ${extraTransform}` : ''}`,
     transformOrigin: 'center center',
     opacity: effectiveClipOpacityPercent(clip, sequenceFrame, sequence) / 100,
     ...(filter ? { filter } : {}),

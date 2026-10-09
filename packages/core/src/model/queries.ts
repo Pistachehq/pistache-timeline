@@ -1,4 +1,5 @@
 import { MAX_STILL_IMAGE_TIMELINE_SECONDS } from './defaults';
+import { isCrossDissolveTransition } from './transition-resolve';
 import { mediaTimeToFrames, secondsToFrames } from '../time/rational';
 import {
   type AudioTrack,
@@ -260,7 +261,7 @@ export function getStackedVideoClipsAt(sequence: Sequence, frame: number): Activ
     if (
       preRoll &&
       !seen.has(preRoll.id) &&
-      preRoll.transitions.in?.videoKind === 'cross-dissolve'
+      isCrossDissolveTransition(preRoll.transitions.in)
     ) {
       stack.push({ clip: preRoll, track });
     }

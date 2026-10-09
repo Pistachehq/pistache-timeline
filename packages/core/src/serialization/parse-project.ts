@@ -9,6 +9,7 @@ import {
   type ClipEdgeTransition,
   type ClipEffects,
   type ClipTransitions,
+  type EffectRegion,
   type VideoEffect,
 } from '../model/effects';
 import {
@@ -141,10 +142,16 @@ function parseClipEdgeTransition(value: unknown, path: string): ClipEdgeTransiti
   const obj = readObject(value, path);
   const videoKind = readEnum(obj, 'videoKind', `${path}.videoKind`, [...VIDEO_TRANSITION_KINDS]);
   if (videoKind === 'none') return null;
+  const libraryId =
+    videoKind === 'library' && typeof obj.libraryId === 'string'
+      ? readString(obj, 'libraryId', path)
+      : null;
   return {
     durationFrames: readInteger(obj, 'durationFrames', path, 0),
     videoKind,
+    libraryId,
     audioCurve: readEnum(obj, 'audioCurve', `${path}.audioCurve`, [...AUDIO_FADE_CURVES]),
+    ...(obj.affectsVideo === false ? { affectsVideo: false } : {}),
   };
 }
 
@@ -157,12 +164,24 @@ function parseClipTransitions(value: unknown, path: string): ClipTransitions {
   };
 }
 
+function parseEffectRegion(value: unknown, path: string): EffectRegion | null {
+  if (value == null) return null;
+  const obj = readObject(value, path);
+  return {
+    top: readNumber(obj, 'top', path),
+    right: readNumber(obj, 'right', path),
+    bottom: readNumber(obj, 'bottom', path),
+    left: readNumber(obj, 'left', path),
+    internal: obj.internal === undefined ? true : readBoolean(obj, 'internal', path),
+  };
+}
+
 function parseVideoEffect(value: unknown, path: string): VideoEffect {
   const obj = readObject(value, path);
   const kind = readEnum(obj, 'kind', `${path}.kind`, [...VIDEO_EFFECT_KINDS]);
   switch (kind) {
     case 'blur':
-      return { kind, amount: readNumber(obj, 'amount', path) };
+      return { kind, amount: readNumber(obj, 'amount', path), region: parseEffectRegion(obj.region, `${path}.region`) };
     case 'brightness':
     case 'contrast':
     case 'saturation':
@@ -182,6 +201,18 @@ function parseVideoEffect(value: unknown, path: string): VideoEffect {
       };
     case 'round-corners':
       return { kind, radius: readNumber(obj, 'radius', path) };
+    case 'brightness-contrast':
+      return {
+        kind,
+        brightness: readNumber(obj, 'brightness', path),
+        contrast: readNumber(obj, 'contrast', path),
+      };
+    case 'library':
+      return {
+        kind,
+        libraryId: readString(obj, 'libraryId', path),
+        amount: obj.amount === undefined ? 100 : readNumber(obj, 'amount', path),
+      };
     default:
       throw invalid(path, 'a supported video effect');
   }

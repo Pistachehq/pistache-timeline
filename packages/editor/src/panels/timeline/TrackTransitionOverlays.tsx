@@ -1,6 +1,8 @@
 import { type Clip, type Sequence, type Track } from '@timeline/core';
 import { cn } from '@timeline/ui';
 import { memo, useMemo } from 'react';
+import { useUiState } from '../../runtime/context';
+import { applyClipTimelinePreview, dragGhostClipsForTransitions } from './clip-transition-preview';
 import { collectTransitionMarkers } from './clip-transition-visual';
 
 const STRIPE =
@@ -44,25 +46,30 @@ export const TrackTransitionOverlays = memo(function TrackTransitionOverlays({
   readonly clips: readonly Clip[];
   readonly pixelsPerFrame: number;
 }) {
-  const markers = useMemo(
-    () => collectTransitionMarkers(sequence, track, clips, pixelsPerFrame),
-    [clips, pixelsPerFrame, sequence, track],
-  );
+  const clipTrim = useUiState((s) => s.clipTrim);
+  const clipDrag = useUiState((s) => s.clipDrag);
+  const markers = useMemo(() => {
+    const effective = clips
+      .map((clip) => applyClipTimelinePreview(clip, track, clipTrim, clipDrag))
+      .filter((clip): clip is Clip => clip !== null);
+    const ghosts = dragGhostClipsForTransitions(sequence, track, clips, clipDrag);
+    return collectTransitionMarkers(sequence, track, [...effective, ...ghosts], pixelsPerFrame);
+  }, [clipDrag, clipTrim, clips, pixelsPerFrame, sequence, track]);
 
   if (markers.length === 0) return null;
 
   return (
-    <>
+    <div className="pointer-events-none absolute inset-0 z-[12] overflow-hidden">
       {markers.map((marker) => (
         <div
           key={marker.key}
-          className="absolute top-1 bottom-1 z-[25] flex"
+          className="absolute top-1 bottom-1 flex"
           style={{ left: marker.leftPx, width: marker.widthPx }}
           data-testid="timeline-transition"
         >
           <TransitionBlock label={marker.label} paired={marker.paired} widthPx={marker.widthPx} />
         </div>
       ))}
-    </>
+    </div>
   );
 });

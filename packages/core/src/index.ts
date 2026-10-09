@@ -11,9 +11,13 @@ export * from './model/invariants';
 export * from './operations/common';
 export * from './operations/clips';
 export * from './operations/clip-effects';
+export * from './operations/clip-transitions-edit';
 export * from './operations/tracks';
 export * from './model/effects';
+export * from './model/transition-resolve';
 export * from './render/clip-render';
+export * from './render/library-look';
+export * from './render/transition-paint';
 export * from './operations/media';
 export * from './operations/media-bin';
 

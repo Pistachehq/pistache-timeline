@@ -8,20 +8,19 @@ import {
   type ClipEffects,
   type Sequence,
   type VideoEffect,
-  type VideoTransitionKind,
 } from '@timeline/core';
 import { IconButton, NumberField, Select, type SelectOption } from '@timeline/ui';
 import { Trash2 } from 'lucide-react';
 import { useRuntime } from '../../runtime/context';
+import {
+  clipEdgeFromSelectValue,
+  displayNameForLibraryEffect,
+  INSPECTOR_VIDEO_TRANSITION_OPTIONS,
+  transitionSelectValue,
+} from '../project/transition-display';
+import { ClipBlurInspector } from './ClipBlurInspector';
 import { InspectorSection } from './InspectorSection';
 import { TimelineDurationField } from './TimelineDurationField';
-
-const VIDEO_TRANSITION_LABELS: Record<VideoTransitionKind, string> = {
-  none: 'None',
-  fade: 'Fade',
-  'dip-black': 'Dip to black',
-  'cross-dissolve': 'Cross dissolve',
-};
 
 const AUDIO_CURVE_OPTIONS: SelectOption<AudioFadeCurve>[] = AUDIO_FADE_CURVES.map((curve) => ({
   value: curve,
@@ -34,10 +33,6 @@ const AUDIO_CURVE_OPTIONS: SelectOption<AudioFadeCurve>[] = AUDIO_FADE_CURVES.ma
           ? 'Logarithmic'
           : 'Linear',
 }));
-
-const VIDEO_TRANSITION_OPTIONS: SelectOption<VideoTransitionKind>[] = (
-  ['fade', 'dip-black', 'cross-dissolve'] as const
-).map((value) => ({ value, label: VIDEO_TRANSITION_LABELS[value] }));
 
 function effectTitle(effect: VideoEffect | AudioEffect): string {
   switch (effect.kind) {
@@ -57,6 +52,8 @@ function effectTitle(effect: VideoEffect | AudioEffect): string {
       return 'Sharpen';
     case 'round-corners':
       return 'Round corners';
+    case 'brightness-contrast':
+      return 'Brightness & Contrast';
     case 'gain':
       return 'Gain';
     case 'highpass':
@@ -71,6 +68,8 @@ function effectTitle(effect: VideoEffect | AudioEffect): string {
       return 'Limiter';
     case 'crop':
       return 'Crop';
+    case 'library':
+      return displayNameForLibraryEffect(effect.libraryId);
     default: {
       const _exhaustive: never = effect;
       return _exhaustive;
@@ -93,33 +92,44 @@ function ActiveTransitionEditor({
   readonly onChange: (next: ClipEdgeTransition) => void;
   readonly onRemove: () => void;
 }) {
+  const audioOnly = value.affectsVideo === false;
   return (
     <div className="space-y-2 rounded-md border border-border-subtle p-2">
       <div className="flex items-center justify-between gap-2">
-        <span className="text-xs font-medium text-fg">{label}</span>
+        <span className="text-xs font-medium text-fg">{audioOnly ? `Audio ${label.toLowerCase()}` : label}</span>
         <IconButton label="Remove transition" icon={<Trash2 />} size="xs" disabled={disabled} onClick={onRemove} />
       </div>
-      <Select
-        label="Video"
-        disabled={disabled}
-        value={value.videoKind}
-        options={VIDEO_TRANSITION_OPTIONS}
-        onValueChange={(videoKind) => onChange({ ...value, videoKind })}
-      />
-      <TimelineDurationField
-        label="Duration"
-        frames={value.durationFrames}
-        frameRate={frameRate}
-        disabled={disabled}
-        onChange={(durationFrames) => onChange({ ...value, durationFrames })}
-      />
-      <Select
-        label="Audio"
-        disabled={disabled}
-        value={value.audioCurve}
-        options={AUDIO_CURVE_OPTIONS}
-        onValueChange={(audioCurve) => onChange({ ...value, audioCurve })}
-      />
+      <div className="grid grid-cols-[4.75rem_minmax(0,1fr)] items-center gap-x-2 gap-y-1.5">
+        {audioOnly ? null : (
+          <>
+            <span className="truncate text-xs text-fg-muted">Video</span>
+            <Select
+              label="Video"
+              disabled={disabled}
+              className="w-full min-w-0"
+              value={transitionSelectValue(value)}
+              options={[...INSPECTOR_VIDEO_TRANSITION_OPTIONS]}
+              onValueChange={(selected) => onChange(clipEdgeFromSelectValue(selected, value))}
+            />
+          </>
+        )}
+        <TimelineDurationField
+          label="Duration"
+          frames={value.durationFrames}
+          frameRate={frameRate}
+          disabled={disabled}
+          onChange={(durationFrames) => onChange({ ...value, durationFrames })}
+        />
+        <span className="truncate text-xs text-fg-muted">{audioOnly ? 'Curve' : 'Audio'}</span>
+        <Select
+          label="Audio curve"
+          disabled={disabled}
+          className="w-full min-w-0"
+          value={value.audioCurve}
+          options={AUDIO_CURVE_OPTIONS}
+          onValueChange={(audioCurve) => onChange({ ...value, audioCurve })}
+        />
+      </div>
     </div>
   );
 }
@@ -141,17 +151,53 @@ function VideoEffectRow({
         <span className="text-xs font-medium text-fg">{effectTitle(effect)}</span>
         <IconButton label="Remove effect" icon={<Trash2 />} size="xs" disabled={disabled} onClick={onRemove} />
       </div>
-      {'amount' in effect ? (
+      {'amount' in effect && effect.kind !== 'blur' && effect.kind !== 'library' ? (
         <NumberField
           label="Amount"
           value={effect.amount}
-          min={effect.kind === 'blur' ? 0 : -100}
+          min={-100}
           max={100}
           step={1}
           precision={0}
           disabled={disabled}
           onChange={(amount) => onChange({ ...effect, amount } as VideoEffect)}
         />
+      ) : null}
+      {effect.kind === 'library' ? (
+        <NumberField
+          label="Amount"
+          value={effect.amount}
+          min={0}
+          max={200}
+          step={1}
+          precision={0}
+          disabled={disabled}
+          onChange={(amount) => onChange({ ...effect, amount })}
+        />
+      ) : null}
+      {effect.kind === 'brightness-contrast' ? (
+        <>
+          <NumberField
+            label="Brightness"
+            value={effect.brightness}
+            min={-100}
+            max={100}
+            step={1}
+            precision={0}
+            disabled={disabled}
+            onChange={(brightness) => onChange({ ...effect, brightness })}
+          />
+          <NumberField
+            label="Contrast"
+            value={effect.contrast}
+            min={-100}
+            max={100}
+            step={1}
+            precision={0}
+            disabled={disabled}
+            onChange={(contrast) => onChange({ ...effect, contrast })}
+          />
+        </>
       ) : null}
       {effect.kind === 'hue-rotate' ? (
         <NumberField
@@ -244,6 +290,26 @@ function AudioEffectRow({
             disabled={disabled}
             onChange={(ratio) => onChange({ ...effect, ratio })}
           />
+          <NumberField
+            label="Attack (ms)"
+            value={effect.attackMs}
+            min={0}
+            max={500}
+            step={1}
+            precision={0}
+            disabled={disabled}
+            onChange={(attackMs) => onChange({ ...effect, attackMs })}
+          />
+          <NumberField
+            label="Release (ms)"
+            value={effect.releaseMs}
+            min={0}
+            max={1000}
+            step={1}
+            precision={0}
+            disabled={disabled}
+            onChange={(releaseMs) => onChange({ ...effect, releaseMs })}
+          />
         </>
       ) : null}
       {effect.kind === 'noise-gate' ? (
@@ -290,12 +356,13 @@ export function ClipEffectsInspector({
   const frameRate = sequence.frameRate;
   const { edit } = useRuntime().actions;
   const effects = clip.effects;
-  const videoEffects = effects.video.filter((e) => e.kind !== 'crop');
+  const videoEffects = effects.video.filter((e) => e.kind !== 'crop' && e.kind !== 'blur');
+  const hasBlur = isVideo && effects.video.some((e) => e.kind === 'blur');
   const hasTransitions = clip.transitions.in !== null || clip.transitions.out !== null;
   const hasVideoFx = isVideo && videoEffects.length > 0;
   const hasAudioFx = (isAudioTrack || isVideo) && effects.audio.length > 0;
 
-  if (!hasTransitions && !hasVideoFx && !hasAudioFx) return null;
+  if (!hasTransitions && !hasVideoFx && !hasAudioFx && !hasBlur) return null;
 
   const commitEffects = (next: ClipEffects, label: string) => {
     edit.setClipEffects(clip.id, next, label);
@@ -331,6 +398,8 @@ export function ClipEffectsInspector({
           ) : null}
         </InspectorSection>
       ) : null}
+
+      {hasBlur ? <ClipBlurInspector clip={clip} locked={locked} /> : null}
 
       {hasVideoFx ? (
         <InspectorSection title="Video effects">

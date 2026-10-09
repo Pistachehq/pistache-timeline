@@ -1,5 +1,5 @@
 /** Video transition at a clip edge (no timeline overlap; cross-dissolve renders both layers in the window). */
-export const VIDEO_TRANSITION_KINDS = ['none', 'fade', 'dip-black', 'cross-dissolve'] as const;
+export const VIDEO_TRANSITION_KINDS = ['none', 'fade', 'dip-black', 'cross-dissolve', 'library'] as const;
 export type VideoTransitionKind = (typeof VIDEO_TRANSITION_KINDS)[number];
 
 /** Audio fade curve for clip in/out (and paired with video transitions on export). */
@@ -9,12 +9,26 @@ export type AudioFadeCurve = (typeof AUDIO_FADE_CURVES)[number];
 export interface ClipEdgeTransition {
   readonly durationFrames: number;
   readonly videoKind: VideoTransitionKind;
+  /** Premiere-style preset id when `videoKind` is `library`. */
+  readonly libraryId: string | null;
   readonly audioCurve: AudioFadeCurve;
+  /** When false, the edge is an audio fade only and does not fade the picture. */
+  readonly affectsVideo?: boolean;
 }
 
 export interface ClipTransitions {
   readonly in: ClipEdgeTransition | null;
   readonly out: ClipEdgeTransition | null;
+}
+
+/** Percent inset region on the clip frame (same space as crop). */
+export interface EffectRegion {
+  readonly top: number;
+  readonly right: number;
+  readonly bottom: number;
+  readonly left: number;
+  /** When true, the effect applies inside the region; otherwise outside. */
+  readonly internal: boolean;
 }
 
 export const VIDEO_EFFECT_KINDS = [
@@ -27,11 +41,13 @@ export const VIDEO_EFFECT_KINDS = [
   'sharpen',
   'crop',
   'round-corners',
+  'brightness-contrast',
+  'library',
 ] as const;
 export type VideoEffectKind = (typeof VIDEO_EFFECT_KINDS)[number];
 
 export type VideoEffect =
-  | { readonly kind: 'blur'; readonly amount: number }
+  | { readonly kind: 'blur'; readonly amount: number; readonly region: EffectRegion | null }
   | { readonly kind: 'brightness'; readonly amount: number }
   | { readonly kind: 'contrast'; readonly amount: number }
   | { readonly kind: 'saturation'; readonly amount: number }
@@ -39,7 +55,9 @@ export type VideoEffect =
   | { readonly kind: 'vignette'; readonly amount: number }
   | { readonly kind: 'sharpen'; readonly amount: number }
   | { readonly kind: 'crop'; readonly top: number; readonly right: number; readonly bottom: number; readonly left: number }
-  | { readonly kind: 'round-corners'; readonly radius: number };
+  | { readonly kind: 'round-corners'; readonly radius: number }
+  | { readonly kind: 'brightness-contrast'; readonly brightness: number; readonly contrast: number }
+  | { readonly kind: 'library'; readonly libraryId: string; readonly amount: number };
 
 export const AUDIO_EFFECT_KINDS = [
   'gain',

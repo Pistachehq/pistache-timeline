@@ -16,7 +16,9 @@ function normalizeEdge(edge: ClipEdgeTransition | null): ClipEdgeTransition | nu
   if (!edge) return null;
   const durationFrames = clampDuration(edge.durationFrames);
   if (durationFrames <= 0 || edge.videoKind === 'none') return null;
-  return { ...edge, durationFrames };
+  if (edge.videoKind === 'library' && !edge.libraryId) return null;
+  const libraryId = edge.videoKind === 'library' ? edge.libraryId : null;
+  return { ...edge, durationFrames, libraryId };
 }
 
 export interface UpdateClipTransitionsInput {

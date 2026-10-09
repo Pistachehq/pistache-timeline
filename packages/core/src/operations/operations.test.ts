@@ -15,6 +15,7 @@ import {
   updateClipAudio,
   updateClipTransform,
 } from './clips';
+import { updateClipTransitions } from './clip-effects';
 import { addMediaAssets, removeMediaAsset } from './media';
 import { addTrack, updateTrack } from './tracks';
 
@@ -177,6 +178,59 @@ describe('splitClip and removeClips', () => {
     );
     expect(extended.clips[CLIP_A]!.sourceOut).toBe(600);
     expect(getClipEnd(extended.clips[CLIP_A]!)).toBe(600);
+  });
+
+  it('drops transitions on new cut edges when splitting', () => {
+    const { project } = withClip();
+    const sequence = activeSequence(project);
+    const withTransitions = unwrap(
+      updateClipTransitions(project, {
+        sequenceId: sequence.id,
+        clipId: CLIP_A,
+        transitions: {
+          in: { durationFrames: 30, videoKind: 'fade', libraryId: null, audioCurve: 'constant-power' },
+          out: { durationFrames: 20, videoKind: 'fade', libraryId: null, audioCurve: 'constant-power' },
+        },
+      }),
+    );
+    const next = activeSequence(
+      unwrap(
+        splitClip(withTransitions, {
+          sequenceId: sequence.id,
+          clipId: CLIP_A,
+          frame: 120,
+          newClipId: CLIP_B,
+        }),
+      ),
+    );
+    expect(next.clips[CLIP_A]!.transitions.in?.durationFrames).toBe(30);
+    expect(next.clips[CLIP_A]!.transitions.out?.durationFrames).toBe(20);
+    expect(next.clips[CLIP_B]!.transitions.in).toBeNull();
+    expect(next.clips[CLIP_B]!.transitions.out).toBeNull();
+  });
+
+  it('keeps transition durations when trimming with [ ]', () => {
+    const { project } = withClip();
+    const sequence = activeSequence(project);
+    const withTransitions = unwrap(
+      updateClipTransitions(project, {
+        sequenceId: sequence.id,
+        clipId: CLIP_A,
+        transitions: {
+          in: { durationFrames: 30, videoKind: 'fade', libraryId: null, audioCurve: 'constant-power' },
+          out: { durationFrames: 40, videoKind: 'fade', libraryId: null, audioCurve: 'constant-power' },
+        },
+      }),
+    );
+    const afterStart = unwrap(
+      trimClip(withTransitions, { sequenceId: sequence.id, clipId: CLIP_A, edge: 'start', frame: 10 }),
+    );
+    expect(activeSequence(afterStart).clips[CLIP_A]!.transitions.in?.durationFrames).toBe(30);
+
+    const afterEnd = unwrap(
+      trimClip(afterStart, { sequenceId: sequence.id, clipId: CLIP_A, edge: 'end', frame: 280 }),
+    );
+    expect(activeSequence(afterEnd).clips[CLIP_A]!.transitions.out?.durationFrames).toBe(40);
   });
 
   it('rejects split points on clip boundaries', () => {

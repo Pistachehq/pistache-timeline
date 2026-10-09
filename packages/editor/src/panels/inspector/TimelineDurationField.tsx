@@ -1,7 +1,10 @@
 import { formatDisplayTime, parseTimecode, TRANSITION_LIMITS, type FrameRate } from '@timeline/core';
-import { NumberField } from '@timeline/ui';
 import { useCallback, useId, useState, type KeyboardEvent } from 'react';
 import { useTimeDisplayFormat } from '../../hooks/use-format-display-time';
+
+const FIELD_LABEL = 'truncate text-xs text-fg-muted';
+const FIELD_BOX =
+  'h-6 w-full min-w-0 rounded-sm border border-line-strong bg-surface-3 px-1.5 text-left font-mono text-xs text-fg tabular-nums outline-none focus-visible:border-accent disabled:opacity-45';
 
 /** Transition/effect duration: frames or timecode depending on workspace preference. */
 export function TimelineDurationField({
@@ -10,16 +13,12 @@ export function TimelineDurationField({
   frameRate,
   disabled,
   onChange,
-  onScrubStart,
-  onScrubEnd,
 }: {
   readonly label: string;
   readonly frames: number;
   readonly frameRate: FrameRate;
   readonly disabled?: boolean;
   readonly onChange: (frames: number) => void;
-  readonly onScrubStart?: () => void;
-  readonly onScrubEnd?: () => void;
 }) {
   const format = useTimeDisplayFormat();
   const min = TRANSITION_LIMITS.durationFrames.min;
@@ -32,17 +31,12 @@ export function TimelineDurationField({
 
   if (format === 'frames') {
     return (
-      <NumberField
+      <FramesDurationField
         label={label}
-        value={frames}
+        frames={frames}
+        disabled={disabled ?? false}
         min={min}
         max={max}
-        step={1}
-        precision={0}
-        unit="fr"
-        disabled={disabled ?? false}
-        {...(onScrubStart ? { onScrubStart } : {})}
-        {...(onScrubEnd ? { onScrubEnd } : {})}
         onChange={(value) => onChange(clampFrames(value))}
       />
     );
@@ -56,6 +50,45 @@ export function TimelineDurationField({
       disabled={disabled ?? false}
       onChange={(value) => onChange(clampFrames(value))}
     />
+  );
+}
+
+function FramesDurationField({
+  label,
+  frames,
+  disabled,
+  min,
+  max,
+  onChange,
+}: {
+  readonly label: string;
+  readonly frames: number;
+  readonly disabled: boolean;
+  readonly min: number;
+  readonly max: number;
+  readonly onChange: (frames: number) => void;
+}) {
+  const id = useId();
+  return (
+    <>
+      <label htmlFor={id} className={FIELD_LABEL}>
+        {label}
+      </label>
+      <input
+        id={id}
+        type="number"
+        disabled={disabled}
+        min={min}
+        max={max}
+        step={1}
+        value={frames}
+        className={`${FIELD_BOX} [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`}
+        onChange={(event) => {
+          const next = Number(event.target.value);
+          if (Number.isFinite(next)) onChange(next);
+        }}
+      />
+    </>
   );
 }
 
@@ -89,8 +122,8 @@ function TimecodeDurationField({
   };
 
   return (
-    <div className="flex h-5 items-center justify-between gap-3 text-xs">
-      <label htmlFor={id} className="shrink-0 text-fg-muted">
+    <>
+      <label htmlFor={id} className={FIELD_LABEL}>
         {label}
       </label>
       {editing ? (
@@ -98,7 +131,7 @@ function TimecodeDurationField({
           id={id}
           autoFocus
           disabled={disabled}
-          className="h-5 w-[7.5rem] rounded-sm border border-line-strong bg-surface-3 px-1 font-mono text-[11px] text-fg outline-none focus-visible:border-accent"
+          className={FIELD_BOX}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onBlur={commit}
@@ -109,7 +142,7 @@ function TimecodeDurationField({
           type="button"
           id={id}
           disabled={disabled}
-          className="font-mono text-[11px] text-fg tabular-nums hover:text-accent disabled:opacity-45"
+          className={FIELD_BOX}
           onClick={() => {
             if (disabled) return;
             setDraft(display);
@@ -119,6 +152,6 @@ function TimecodeDurationField({
           {display}
         </button>
       )}
-    </div>
+    </>
   );
 }

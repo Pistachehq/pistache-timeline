@@ -17,10 +17,14 @@ function edgeFromPayload(payload: EffectLibraryPayload): ClipEdgeTransition {
   if (payload.kind !== 'transition-in' && payload.kind !== 'transition-out') {
     return base;
   }
+  const libraryId =
+    payload.videoKind === 'library' ? (payload.libraryId ?? null) : null;
   return {
     durationFrames: payload.durationFrames ?? base.durationFrames,
     videoKind: payload.videoKind,
+    libraryId,
     audioCurve: payload.audioCurve,
+    ...(payload.affectsVideo === false ? { affectsVideo: false } : {}),
   };
 }
 

@@ -5,6 +5,7 @@ import {
   type VideoTransitionKind,
 } from '@timeline/core';
 import { type EffectLibraryPayload } from '../dnd';
+import { PREMIERE_EFFECT_LIBRARY } from './premiere-library';
 
 export type EffectCategoryId =
   | 'video-transitions'
@@ -22,6 +23,8 @@ export interface EffectLibraryEntry {
   readonly id: string;
   readonly name: string;
   readonly categoryId: EffectCategoryId;
+  /** Parent folder for nested bins (`video-effects/Adjust`, etc.). */
+  readonly folderPath: string;
   readonly payload: EffectLibraryPayload;
 }
 
@@ -59,7 +62,14 @@ function transitionIn(
     id: `vin-${videoKind}-${audioCurve}`,
     name,
     categoryId: 'video-transitions',
-    payload: { kind: 'transition-in', videoKind, audioCurve, durationFrames: DEFAULT_TRANSITION_FRAMES },
+    folderPath: 'video-transitions',
+    payload: {
+      kind: 'transition-in',
+      videoKind,
+      libraryId: null,
+      audioCurve,
+      durationFrames: DEFAULT_TRANSITION_FRAMES,
+    },
   };
 }
 
@@ -72,7 +82,14 @@ function transitionOut(
     id: `vout-${videoKind}-${audioCurve}`,
     name,
     categoryId: 'video-transitions',
-    payload: { kind: 'transition-out', videoKind, audioCurve, durationFrames: DEFAULT_TRANSITION_FRAMES },
+    folderPath: 'video-transitions',
+    payload: {
+      kind: 'transition-out',
+      videoKind,
+      libraryId: null,
+      audioCurve,
+      durationFrames: DEFAULT_TRANSITION_FRAMES,
+    },
   };
 }
 
@@ -81,11 +98,14 @@ function audioTransitionIn(audioCurve: AudioFadeCurve, name: string): EffectLibr
     id: `ain-${audioCurve}`,
     name,
     categoryId: 'audio-transitions',
+    folderPath: 'audio-transitions',
     payload: {
       kind: 'transition-in',
       videoKind: 'fade',
+      libraryId: `audio-transitions/${audioCurve}`,
       audioCurve,
       durationFrames: DEFAULT_TRANSITION_FRAMES,
+      affectsVideo: false,
     },
   };
 }
@@ -95,11 +115,14 @@ function audioTransitionOut(audioCurve: AudioFadeCurve, name: string): EffectLib
     id: `aout-${audioCurve}`,
     name,
     categoryId: 'audio-transitions',
+    folderPath: 'audio-transitions',
     payload: {
       kind: 'transition-out',
       videoKind: 'fade',
+      libraryId: `audio-transitions/${audioCurve}`,
       audioCurve,
       durationFrames: DEFAULT_TRANSITION_FRAMES,
+      affectsVideo: false,
     },
   };
 }
@@ -109,6 +132,7 @@ function videoFx(id: string, effect: VideoEffect, name: string): EffectLibraryEn
     id: `vfx-${id}`,
     name,
     categoryId: 'video-effects',
+    folderPath: 'video-effects',
     payload: { kind: 'video-effect', effect },
   };
 }
@@ -118,11 +142,12 @@ function audioFx(id: string, effect: AudioEffect, name: string): EffectLibraryEn
     id: `afx-${id}`,
     name,
     categoryId: 'audio-effects',
+    folderPath: 'audio-effects',
     payload: { kind: 'audio-effect', effect },
   };
 }
 
-export const EFFECT_LIBRARY: readonly EffectLibraryEntry[] = [
+const CORE_EFFECT_LIBRARY: readonly EffectLibraryEntry[] = [
   transitionIn('fade', 'constant-power', 'Fade in'),
   transitionOut('fade', 'constant-power', 'Fade out'),
   transitionIn('dip-black', 'constant-power', 'Dip to black in'),
@@ -130,7 +155,7 @@ export const EFFECT_LIBRARY: readonly EffectLibraryEntry[] = [
   transitionIn('cross-dissolve', 'constant-power', 'Cross dissolve in'),
   transitionOut('cross-dissolve', 'constant-power', 'Cross dissolve out'),
 
-  videoFx('blur', { kind: 'blur', amount: 30 }, 'Blur'),
+  videoFx('blur', { kind: 'blur', amount: 30, region: null }, 'Blur'),
   videoFx('brightness', { kind: 'brightness', amount: 0 }, 'Brightness'),
   videoFx('contrast', { kind: 'contrast', amount: 20 }, 'Contrast'),
   videoFx('saturation', { kind: 'saturation', amount: 25 }, 'Saturation'),
@@ -160,10 +185,59 @@ export const EFFECT_LIBRARY: readonly EffectLibraryEntry[] = [
   audioFx('limiter', { kind: 'limiter', ceilingDb: -1 }, 'Limiter'),
 ];
 
+/** Core presets plus Premiere-style catalog entries. */
+export const EFFECT_LIBRARY: readonly EffectLibraryEntry[] = [...CORE_EFFECT_LIBRARY, ...PREMIERE_EFFECT_LIBRARY];
+
 export function getEffectCategory(id: EffectCategoryId): EffectCategory | undefined {
   return EFFECT_CATEGORIES.find((c) => c.id === id);
 }
 
 export function listEffectsInCategory(categoryId: EffectCategoryId): readonly EffectLibraryEntry[] {
   return EFFECT_LIBRARY.filter((e) => e.categoryId === categoryId);
+}
+
+export interface EffectsBinFolder {
+  readonly id: string;
+  readonly name: string;
+}
+
+export interface EffectsBinContents {
+  readonly folders: readonly EffectsBinFolder[];
+  readonly presets: readonly EffectLibraryEntry[];
+}
+
+/** Lists subfolders and presets for the effects bin at `folderPath` (`null` = top-level categories). */
+export function listEffectsBinContents(
+  categoryId: EffectCategoryId | null,
+  folderPath: string | null,
+): EffectsBinContents {
+  if (!categoryId) {
+    return {
+      folders: EFFECT_CATEGORIES.map((c) => ({ id: c.id, name: c.name })),
+      presets: [],
+    };
+  }
+
+  const basePath = folderPath ?? categoryId;
+  const entries = EFFECT_LIBRARY.filter((e) => e.categoryId === categoryId && e.folderPath === basePath);
+  const nested = new Map<string, EffectsBinFolder>();
+  for (const entry of EFFECT_LIBRARY) {
+    if (entry.categoryId !== categoryId) continue;
+    if (!entry.folderPath.startsWith(`${basePath}/`)) continue;
+    const rest = entry.folderPath.slice(basePath.length + 1);
+    const segment = rest.split('/')[0];
+    if (!segment) continue;
+    const childPath = `${basePath}/${segment}`;
+    nested.set(childPath, { id: childPath, name: segment });
+  }
+
+  const folders = [...nested.values()].sort((a, b) => a.name.localeCompare(b.name));
+  const presets = [...entries].sort((a, b) => a.name.localeCompare(b.name));
+  return { folders, presets };
+}
+
+export function effectsBinBreadcrumb(categoryId: EffectCategoryId, folderPath: string | null): readonly string[] {
+  if (!folderPath || folderPath === categoryId) return [];
+  const tail = folderPath.startsWith(`${categoryId}/`) ? folderPath.slice(categoryId.length + 1) : folderPath;
+  return tail.split('/');
 }

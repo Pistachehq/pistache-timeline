@@ -23,6 +23,7 @@ import {
 } from '../model/types';
 import { isRangeFree } from '../timeline/placement';
 import { eraseRangeOnTrack, type SplitClipStep } from '../timeline/overwrite';
+import { transitionsForSplitLeft, transitionsForSplitRight } from './clip-transitions-edit';
 import { type EditResult, fail, replaceTrack, sortClipIds, updateSequence } from './common';
 
 export function canTrackHoldAsset(track: Track, asset: MediaAsset): boolean {
@@ -215,7 +216,11 @@ function splitClipInSequence(
     return fail('INVALID_ARGUMENT', 'The split point must be inside the clip.');
   }
   const cut = clip.sourceIn + (frame - clip.start);
-  const left: Clip = { ...clip, sourceOut: cut };
+  const left: Clip = {
+    ...clip,
+    sourceOut: cut,
+    transitions: transitionsForSplitLeft(clip),
+  };
   const right: Clip = {
     ...createClip({
       ...(newClipId ? { id: newClipId } : {}),
@@ -230,7 +235,7 @@ function splitClipInSequence(
     enabled: clip.enabled,
     transform: clip.transform,
     audio: clip.audio,
-    transitions: clip.transitions,
+    transitions: transitionsForSplitRight(clip),
     effects: clip.effects,
   };
   if (sequence.clips[right.id]) return fail('CONFLICT', `Clip ${right.id} already exists.`);

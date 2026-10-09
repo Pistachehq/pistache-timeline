@@ -116,10 +116,14 @@ export interface UiState {
   readonly projectBinTab: ProjectBinTab;
   /** Open category in the effects bin (`null` = category list). */
   readonly effectsBinOpenCategoryId: EffectCategoryId | null;
+  /** Nested folder path inside a category (e.g. `video-effects/Adjust`). */
+  readonly effectsBinOpenPath: string | null;
   /** Payload while dragging from the effects library (highlights timeline drop targets). */
   readonly effectDrag: EffectLibraryPayload | null;
   /** Clip being cropped in the program monitor (`null` = editor closed). */
   readonly clipCropEditId: ClipId | null;
+  /** Clip whose blur mask is being edited in the program monitor. */
+  readonly clipBlurEditId: ClipId | null;
   /** Folder/asset ids playing a short enter animation in the media bin. */
   readonly mediaBinPopInIds: readonly string[];
   setTool(tool: EditTool): void;
@@ -146,8 +150,10 @@ export interface UiState {
   setMediaBinOpenFolderId(folderId: MediaBinFolderId | null): void;
   setProjectBinTab(tab: ProjectBinTab): void;
   setEffectsBinOpenCategoryId(categoryId: EffectCategoryId | null): void;
+  setEffectsBinOpenPath(path: string | null): void;
   setEffectDrag(payload: EffectLibraryPayload | null): void;
   setClipCropEditId(clipId: ClipId | null): void;
+  setClipBlurEditId(clipId: ClipId | null): void;
   flashMediaBinPopIn(ids: readonly string[]): void;
 }
 
@@ -176,8 +182,10 @@ export function createUiStore(): UiStore {
     mediaBinOpenFolderId: null,
     projectBinTab: 'media',
     effectsBinOpenCategoryId: null,
+    effectsBinOpenPath: null,
     effectDrag: null,
     clipCropEditId: null,
+    clipBlurEditId: null,
     mediaBinPopInIds: [],
 
     setTool: (tool) => set({ tool }),
@@ -249,9 +257,14 @@ export function createUiStore(): UiStore {
       set({ playbackMeterClipId, playbackMeterPeak: Math.max(0, Math.min(1, playbackMeterPeak)) }),
     setMediaBinOpenFolderId: (mediaBinOpenFolderId) => set({ mediaBinOpenFolderId }),
     setProjectBinTab: (projectBinTab) => set({ projectBinTab }),
-    setEffectsBinOpenCategoryId: (effectsBinOpenCategoryId) => set({ effectsBinOpenCategoryId }),
+    setEffectsBinOpenCategoryId: (effectsBinOpenCategoryId) =>
+      set({ effectsBinOpenCategoryId, effectsBinOpenPath: null }),
+    setEffectsBinOpenPath: (effectsBinOpenPath) => set({ effectsBinOpenPath }),
     setEffectDrag: (effectDrag) => set({ effectDrag }),
-    setClipCropEditId: (clipCropEditId) => set({ clipCropEditId }),
+    setClipCropEditId: (clipCropEditId) =>
+      set({ clipCropEditId, clipBlurEditId: clipCropEditId ? null : get().clipBlurEditId }),
+    setClipBlurEditId: (clipBlurEditId) =>
+      set({ clipBlurEditId, clipCropEditId: clipBlurEditId ? null : get().clipCropEditId }),
 
     flashMediaBinPopIn(ids) {
       const unique = [...new Set(ids.filter(Boolean))];

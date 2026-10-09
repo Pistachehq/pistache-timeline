@@ -49,7 +49,7 @@ function TrackRows({ sequence, tracks, height, width, pixelsPerFrame, visibleRan
   return tracks.map((track) => (
     <div
       key={track.id}
-      className="relative flex bg-surface-0"
+      className="flex bg-surface-0"
       data-track-row
       data-track-id={track.id}
       data-track-kind={track.kind}
@@ -174,7 +174,7 @@ export function TimelinePanel() {
         <div className="relative isolate min-h-full bg-surface-0" style={{ width: TRACK_HEADER_WIDTH + contentWidth }}>
           <div className="sticky top-0 z-30 flex" style={{ height: RULER_HEIGHT }}>
             <div
-              className="sticky left-0 z-[25] flex shrink-0 items-center border-r border-b border-line bg-surface-2 px-2"
+              className="sticky left-0 z-[30] flex shrink-0 items-center border-r border-b border-line bg-surface-2 px-2"
               style={{ width: TRACK_HEADER_WIDTH }}
             >
               <PlayheadTimecode frameRate={sequence.frameRate} />

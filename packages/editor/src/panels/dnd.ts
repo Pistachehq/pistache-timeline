@@ -8,14 +8,18 @@ export type EffectLibraryPayload =
   | {
       readonly kind: 'transition-in';
       readonly videoKind: import('@timeline/core').VideoTransitionKind;
+      readonly libraryId?: string | null;
       readonly audioCurve: import('@timeline/core').AudioFadeCurve;
       readonly durationFrames?: number;
+      readonly affectsVideo?: boolean;
     }
   | {
       readonly kind: 'transition-out';
       readonly videoKind: import('@timeline/core').VideoTransitionKind;
+      readonly libraryId?: string | null;
       readonly audioCurve: import('@timeline/core').AudioFadeCurve;
       readonly durationFrames?: number;
+      readonly affectsVideo?: boolean;
     }
   | { readonly kind: 'video-effect'; readonly effect: import('@timeline/core').VideoEffect }
   | { readonly kind: 'audio-effect'; readonly effect: import('@timeline/core').AudioEffect };

@@ -1,11 +1,14 @@
 import {
   getClipEnd,
+  isCrossDissolveTransition,
+  resolveTransitionRenderKind,
   type Clip,
   type ClipEdgeTransition,
   type Sequence,
   type Track,
   type VideoTransitionKind,
 } from '@timeline/core';
+import { transitionDisplayName } from '../project/transition-display';
 
 export interface TransitionMarker {
   readonly key: string;
@@ -57,8 +60,10 @@ function isCrossDissolvePair(
 ): boolean {
   return (
     getClipEnd(left) === right.start &&
-    outEdge?.videoKind === 'cross-dissolve' &&
-    inEdge?.videoKind === 'cross-dissolve' &&
+    outEdge !== null &&
+    inEdge !== null &&
+    isCrossDissolveTransition(outEdge) &&
+    isCrossDissolveTransition(inEdge) &&
     outEdge.durationFrames > 0 &&
     inEdge.durationFrames > 0
   );
@@ -67,6 +72,17 @@ function isCrossDissolvePair(
 function edgeDuration(edge: ClipEdgeTransition | null): number {
   if (!edge || edge.videoKind === 'none') return 0;
   return Math.max(0, edge.durationFrames);
+}
+
+/** Keep transition blocks inside the track lane (no negative inset / header overlap). */
+function clampMarkerGeometry(leftPx: number, widthPx: number): { readonly leftPx: number; readonly widthPx: number } {
+  let left = leftPx;
+  let width = Math.max(4, widthPx);
+  if (left < 0) {
+    width = Math.max(4, width + left);
+    left = 0;
+  }
+  return { leftPx: left, widthPx: width };
 }
 
 /** Absolute timeline markers for transition overlays on one track (Premiere-style). */
@@ -97,11 +113,12 @@ export function collectTransitionMarkers(
         const duration = Math.max(edgeDuration(trOut), edgeDuration(next.transitions.in));
         const cutFrame = getClipEnd(clip);
         const widthPx = Math.max(4, duration * pixelsPerFrame);
-        const leftPx = cutFrame * pixelsPerFrame - widthPx / 2;
+        const rawLeft = cutFrame * pixelsPerFrame - widthPx / 2;
+        const { leftPx, widthPx: w } = clampMarkerGeometry(rawLeft, widthPx);
         markers.push({
           key: `pair-${pairKey}`,
           leftPx,
-          widthPx,
+          widthPx: w,
           label: transitionLabel('cross-dissolve'),
           kind: 'cross-dissolve',
           paired: true,
@@ -111,12 +128,13 @@ export function collectTransitionMarkers(
       const duration = edgeDuration(trOut);
       const widthPx = Math.max(4, duration * pixelsPerFrame);
       const clipEnd = getClipEnd(clip);
+      const { leftPx, widthPx: w } = clampMarkerGeometry(clipEnd * pixelsPerFrame - widthPx, widthPx);
       markers.push({
         key: `out-${clip.id}`,
-        leftPx: clipEnd * pixelsPerFrame - widthPx,
-        widthPx,
-        label: transitionLabel(trOut.videoKind),
-        kind: trOut.videoKind,
+        leftPx,
+        widthPx: w,
+        label: transitionDisplayName(trOut),
+        kind: resolveTransitionRenderKind(trOut),
         paired: false,
       });
     }
@@ -128,8 +146,8 @@ export function collectTransitionMarkers(
         key: `in-${clip.id}`,
         leftPx: clip.start * pixelsPerFrame,
         widthPx,
-        label: transitionLabel(trIn.videoKind),
-        kind: trIn.videoKind,
+        label: transitionDisplayName(trIn),
+        kind: resolveTransitionRenderKind(trIn),
         paired: false,
       });
     }
