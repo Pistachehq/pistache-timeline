@@ -28,6 +28,7 @@ import { RazorLine } from './RazorLine';
 import { SnapGuides } from './SnapGuides';
 import { TimelineRuler } from './TimelineRuler';
 import { TimelineToolbar } from './TimelineToolbar';
+import { TrackExpandDropZone } from './TrackExpandDropZone';
 import { TrackHeader } from './TrackHeader';
 import { TrackLane } from './TrackLane';
 import { playheadStepFromWheel, wheelShouldScrubPlayhead } from './timeline-wheel-playhead';
@@ -185,6 +186,7 @@ export function TimelinePanel() {
               width={laneViewportWidth}
             />
           </div>
+          <TrackExpandDropZone edge="video" sequence={sequence} pixelsPerFrame={pixelsPerFrame} />
           <TrackRows
             sequence={sequence}
             tracks={videoTracks}
@@ -205,6 +207,7 @@ export function TimelinePanel() {
             pixelsPerFrame={pixelsPerFrame}
             visibleRange={visibleRange}
           />
+          <TrackExpandDropZone edge="audio" sequence={sequence} pixelsPerFrame={pixelsPerFrame} />
           <SnapGuides pixelsPerFrame={pixelsPerFrame} />
           <PlayheadLine scrollerRef={scrollerRef} pixelsPerFrame={pixelsPerFrame} />
           <RazorLine scrollerRef={scrollerRef} pixelsPerFrame={pixelsPerFrame} frameRate={sequence.frameRate} />

@@ -12,6 +12,7 @@ import {
   getSequence,
   getSplittableClipsAt,
   pairedAudioTrack,
+  pairedVideoTrack,
   updateSequence,
   type MediaAssetId,
   moveClip,
@@ -30,8 +31,80 @@ import {
   updateClipTransform,
   updateTrack,
 } from '@timeline/core';
-import { ok } from '@timeline/shared';
+import { ok, type Result, type TimelineError } from '@timeline/shared';
+import { type AutoCreateTrackKind } from '../state/ui-store';
 import { currentSequence, type EditorServices } from '../runtime/services';
+
+type ClipMovePreview = { readonly clipId: ClipId; readonly trackId: TrackId; readonly start: number };
+
+function remappedPreviewsForNewTrack(
+  sequence: Sequence,
+  previews: readonly ClipMovePreview[],
+  kind: AutoCreateTrackKind,
+): ClipMovePreview[] {
+  if (kind === 'video') {
+    const newVideo = sequence.videoTracks.at(-1);
+    if (!newVideo) return [...previews];
+    return previews.map((preview) => {
+      const clip = sequence.clips[preview.clipId];
+      if (!clip) return preview;
+      const home = findTrack(sequence, clip.trackId);
+      if (home?.kind === 'video') return { ...preview, trackId: newVideo.id };
+      const paired = pairedAudioTrack(sequence, newVideo.id);
+      return paired ? { ...preview, trackId: paired.id } : preview;
+    });
+  }
+  const newAudio = sequence.audioTracks.at(-1);
+  if (!newAudio) return [...previews];
+  return previews.map((preview) => {
+    const clip = sequence.clips[preview.clipId];
+    if (!clip) return preview;
+    const home = findTrack(sequence, clip.trackId);
+    if (home?.kind === 'audio') return { ...preview, trackId: newAudio.id };
+    const paired = pairedVideoTrack(sequence, newAudio.id);
+    return paired ? { ...preview, trackId: paired.id } : preview;
+  });
+}
+
+function applyAutoCreateTrack(
+  project: Project,
+  sequence: Sequence,
+  kind: AutoCreateTrackKind,
+  previews: readonly ClipMovePreview[],
+): Result<{ project: Project; previews: ClipMovePreview[] }, TimelineError> {
+  let p = project;
+  let seq = getActiveSequence(p) ?? sequence;
+  let add = addTrack(p, { sequenceId: seq.id, kind });
+  if (!add.ok) return add;
+  p = add.value;
+  seq = getActiveSequence(p)!;
+
+  if (kind === 'video') {
+    const needsAudio = previews.some((pr) => {
+      const clip = seq.clips[pr.clipId];
+      return clip?.linkId && findTrack(seq, clip.trackId)?.kind === 'video';
+    });
+    if (needsAudio && seq.audioTracks.length < seq.videoTracks.length) {
+      add = addTrack(p, { sequenceId: seq.id, kind: 'audio' });
+      if (!add.ok) return add;
+      p = add.value;
+      seq = getActiveSequence(p)!;
+    }
+  } else {
+    const needsVideo = previews.some((pr) => {
+      const clip = seq.clips[pr.clipId];
+      return clip?.linkId && findTrack(seq, clip.trackId)?.kind === 'audio';
+    });
+    if (needsVideo && seq.videoTracks.length < seq.audioTracks.length) {
+      add = addTrack(p, { sequenceId: seq.id, kind: 'video' });
+      if (!add.ok) return add;
+      p = add.value;
+      seq = getActiveSequence(p)!;
+    }
+  }
+
+  return ok({ project: p, previews: remappedPreviewsForNewTrack(seq, previews, kind) });
+}
 
 function chain(project: Project, steps: readonly ((p: Project) => EditResult)[]): EditResult {
   let result: EditResult = ok(project);
@@ -101,45 +174,55 @@ export function createEditActions(services: EditorServices) {
     );
   };
 
+  const placeClipOnProject = (
+    project: Project,
+    sequence: Sequence,
+    assetId: MediaAssetId,
+    trackId: TrackId,
+    start: number,
+    clipId: ClipId,
+  ): EditResult => {
+    const track = findTrack(sequence, trackId);
+    const asset = project.mediaAssets[assetId];
+    let result = addClip(project, { sequenceId: sequence.id, trackId, assetId, start, clipId });
+    if (!result.ok || !track || track.kind !== 'video' || !asset?.hasAudio) return result;
+
+    const audioTrack = pairedAudioTrack(sequence, track.id);
+    if (!audioTrack || audioTrack.locked) return result;
+
+    const seq = getSequence(result.value, sequence.id);
+    const videoClip = seq?.clips[clipId];
+    if (!seq || !videoClip) return result;
+
+    const audioClipId = newClipId();
+    result = addClip(result.value, {
+      sequenceId: sequence.id,
+      trackId: audioTrack.id,
+      assetId,
+      start,
+      sourceIn: videoClip.sourceIn,
+      sourceOut: videoClip.sourceOut,
+      clipId: audioClipId,
+    });
+    if (!result.ok) return result;
+
+    return updateSequence(result.value, sequence.id, (next) =>
+      ok({
+        ...next,
+        clips: {
+          ...next.clips,
+          [clipId]: { ...next.clips[clipId]!, linkId: audioClipId },
+          [audioClipId]: { ...next.clips[audioClipId]!, linkId: clipId },
+        },
+      }),
+    );
+  };
+
   const placeClip = (assetId: MediaAssetId, trackId: TrackId, start: number, label: string): ClipId | null => {
     const clipId = newClipId();
-    const placed = run(label, (project, sequence) => {
-      const track = findTrack(sequence, trackId);
-      const asset = project.mediaAssets[assetId];
-      let result = addClip(project, { sequenceId: sequence.id, trackId, assetId, start, clipId });
-      if (!result.ok || !track || track.kind !== 'video' || !asset?.hasAudio) return result;
-
-      const audioTrack = pairedAudioTrack(sequence, track.id);
-      if (!audioTrack || audioTrack.locked) return result;
-
-      const seq = getSequence(result.value, sequence.id);
-      const videoClip = seq?.clips[clipId];
-      if (!seq || !videoClip) return result;
-
-      const audioStart = start;
-      const audioClipId = newClipId();
-      result = addClip(result.value, {
-        sequenceId: sequence.id,
-        trackId: audioTrack.id,
-        assetId,
-        start: audioStart,
-        sourceIn: videoClip.sourceIn,
-        sourceOut: videoClip.sourceOut,
-        clipId: audioClipId,
-      });
-      if (!result.ok) return result;
-
-      return updateSequence(result.value, sequence.id, (next) =>
-        ok({
-          ...next,
-          clips: {
-            ...next.clips,
-            [clipId]: { ...next.clips[clipId]!, linkId: audioClipId },
-            [audioClipId]: { ...next.clips[audioClipId]!, linkId: clipId },
-          },
-        }),
-      );
-    });
+    const placed = run(label, (project, sequence) =>
+      placeClipOnProject(project, sequence, assetId, trackId, start, clipId),
+    );
     if (!placed) return null;
     selection.getState().selectClips([clipId]);
     return clipId;
@@ -181,28 +264,76 @@ export function createEditActions(services: EditorServices) {
       return placeClip(assetId, trackId, Math.max(0, Math.round(frame)), 'Insert Clip');
     },
 
+    /** Adds a new track (top video or bottom audio) and places the asset there. */
+    placeAssetOnNewTrack(assetId: MediaAssetId, kind: AutoCreateTrackKind, frame: number): ClipId | null {
+      const project = projectStore.getState().project;
+      const sequence = currentSequence(services);
+      const asset = project.mediaAssets[assetId];
+      if (!sequence || !asset) return null;
+      if (kind === 'video' && !asset.hasVideo && asset.kind !== 'image') return null;
+      if (kind === 'audio' && !asset.hasAudio) return null;
+      const duration = getAssetFrameCount(asset, sequence);
+      if (duration <= 0) return null;
+      const at = Math.max(0, Math.round(frame));
+      const clipId = newClipId();
+      const placed = run('Insert Clip', (project, sequence) => {
+        let add = addTrack(project, { sequenceId: sequence.id, kind });
+        if (!add.ok) return add;
+        let p = add.value;
+        let seq = getActiveSequence(p)!;
+        if (kind === 'video' && asset.hasAudio && seq.audioTracks.length < seq.videoTracks.length) {
+          add = addTrack(p, { sequenceId: seq.id, kind: 'audio' });
+          if (!add.ok) return add;
+          p = add.value;
+          seq = getActiveSequence(p)!;
+        }
+        const track = (kind === 'video' ? seq.videoTracks.at(-1) : seq.audioTracks.at(-1))!;
+        return placeClipOnProject(p, seq, assetId, track.id, at, clipId);
+      });
+      if (!placed) return null;
+      selection.getState().selectClips([clipId]);
+      return clipId;
+    },
+
     /** Moves several clips in one undo step (multi-select and linked partners). */
     moveClipGroup(
-      previews: readonly { clipId: ClipId; trackId: TrackId; start: number; offsetY?: number }[],
+      previews: readonly ClipMovePreview[],
+      autoCreateTrack: AutoCreateTrackKind | null = null,
     ): boolean {
       if (previews.length === 0) return false;
-      const label = previews.length > 1 ? 'Move Clips' : 'Move Clip';
+      const label =
+        autoCreateTrack !== null
+          ? autoCreateTrack === 'video'
+            ? 'Add Video Track'
+            : 'Add Audio Track'
+          : previews.length > 1
+            ? 'Move Clips'
+            : 'Move Clip';
       return run(label, (_project, sequence) => {
-        const ordered = [...previews].sort((a, b) => {
-          const ca = sequence.clips[a.clipId];
-          const cb = sequence.clips[b.clipId];
-          const trackA = ca ? findTrack(sequence, ca.trackId) : undefined;
-          const trackB = cb ? findTrack(sequence, cb.trackId) : undefined;
+        let project = _project;
+        let activePreviews: readonly ClipMovePreview[] = previews;
+        if (autoCreateTrack) {
+          const created = applyAutoCreateTrack(project, sequence, autoCreateTrack, previews);
+          if (!created.ok) return created;
+          project = created.value.project;
+          activePreviews = created.value.previews;
+        }
+        const seq = getActiveSequence(project) ?? sequence;
+        const ordered = [...activePreviews].sort((a, b) => {
+          const ca = seq.clips[a.clipId];
+          const cb = seq.clips[b.clipId];
+          const trackA = ca ? findTrack(seq, ca.trackId) : undefined;
+          const trackB = cb ? findTrack(seq, cb.trackId) : undefined;
           const kindOrder = (trackA?.kind === 'video' ? 0 : 1) - (trackB?.kind === 'video' ? 0 : 1);
           if (kindOrder !== 0) return kindOrder;
           return (ca?.start ?? 0) - (cb?.start ?? 0);
         });
         return chain(
-          _project,
+          project,
           ordered.map(
             (preview) => (p: Project) =>
               moveClip(p, {
-                sequenceId: sequence.id,
+                sequenceId: seq.id,
                 clipId: preview.clipId,
                 trackId: preview.trackId,
                 start: Math.max(0, Math.round(preview.start)),

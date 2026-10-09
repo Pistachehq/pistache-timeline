@@ -1,8 +1,10 @@
 import { getActiveSequence, type Clip, type Track, type TrackId } from '@timeline/core';
 import { type PointerEvent as ReactPointerEvent, useRef } from 'react';
 import { useRuntime } from '../../runtime/context';
+import { type AutoCreateTrackKind } from '../../state/ui-store';
 import { buildDragPreviews, expandMovingClips } from './clip-drag-group';
 import { snapClipDrag, snapTimelineFrame } from './timeline-snap';
+import { resolveTrackDragTarget } from './track-drag-target';
 
 const DRAG_THRESHOLD_PX = 3;
 
@@ -19,18 +21,7 @@ interface Gesture {
   readonly moving: readonly Clip[];
   dragging: boolean;
   destTrackId: TrackId;
-}
-
-/** Track row under `clientY` that accepts clips of `kind` (header + lane). */
-function laneAt(clientY: number, kind: Track['kind']): { trackId: TrackId; top: number } | null {
-  for (const row of document.querySelectorAll<HTMLElement>('[data-track-row]')) {
-    const rect = row.getBoundingClientRect();
-    if (clientY < rect.top || clientY >= rect.bottom) continue;
-    if (row.dataset.trackKind !== kind || row.dataset.trackLocked === 'true') continue;
-    const lane = row.querySelector<HTMLElement>('[data-track-lane]');
-    return { trackId: row.dataset.trackId as TrackId, top: lane?.getBoundingClientRect().top ?? rect.top };
-  }
-  return null;
+  autoCreateTrack: AutoCreateTrackKind | null;
 }
 
 const isAdditive = (event: { shiftKey: boolean; ctrlKey: boolean; metaKey: boolean }) =>
@@ -72,10 +63,15 @@ export function useClipDrag(clip: Clip, track: Track, pixelsPerFrame: number) {
     const sequence = getActiveSequence(project.getState().project);
     if (!sequence) return;
 
-    const target = laneAt(clientY, g.kind);
-    if (target) g.destTrackId = target.trackId;
+    const resolved = resolveTrackDragTarget(clientY, g.kind, g.laneTop);
+    if (resolved) {
+      g.destTrackId = resolved.trackId;
+      g.autoCreateTrack = resolved.autoCreateTrack;
+    } else {
+      g.autoCreateTrack = null;
+    }
 
-    const offsetY = target ? target.top - g.laneTop : 0;
+    const offsetY = resolved?.offsetY ?? 0;
     const dx = clientX - g.x;
     let start = Math.max(0, g.primary.start + Math.round(dx / pixelsPerFrame));
     const excludeIds = g.moving.map((c) => c.id);
@@ -93,6 +89,7 @@ export function useClipDrag(clip: Clip, track: Track, pixelsPerFrame: number) {
     ui.getState().setClipDrag({
       primaryClipId: g.primary.id,
       previews: buildDragPreviews(sequence, g.moving, g.primary, start, g.destTrackId, offsetY),
+      autoCreateTrack: g.autoCreateTrack,
     });
   };
 
@@ -171,14 +168,17 @@ export function useClipDrag(clip: Clip, track: Track, pixelsPerFrame: number) {
         previews = runtime.stores.ui.getState().clipDrag?.previews ?? [];
       }
 
+      const autoCreate = g.autoCreateTrack;
       end();
 
       if (g.dragging && previews.length > 0) {
-        const changed = previews.some((preview) => {
-          const original = g.moving.find((c) => c.id === preview.clipId);
-          return original && (preview.start !== original.start || preview.trackId !== original.trackId);
-        });
-        if (changed) runtime.actions.edit.moveClipGroup(previews);
+        const changed =
+          autoCreate !== null ||
+          previews.some((preview) => {
+            const original = g.moving.find((c) => c.id === preview.clipId);
+            return original && (preview.start !== original.start || preview.trackId !== original.trackId);
+          });
+        if (changed) runtime.actions.edit.moveClipGroup(previews, autoCreate);
       } else if (!g.dragging) {
         const { selection: sel } = runtime.stores;
         sel.getState().selectClips([clip.id]);
@@ -204,6 +204,7 @@ export function useClipDrag(clip: Clip, track: Track, pixelsPerFrame: number) {
       moving: expandMovingClips(sequence, clip, selection.getState().clipIds),
       dragging: false,
       destTrackId: track.id,
+      autoCreateTrack: null,
     };
   };
 

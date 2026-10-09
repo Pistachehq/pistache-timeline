@@ -34,9 +34,13 @@ export interface ClipDragPreview {
   readonly offsetY: number;
 }
 
+export type AutoCreateTrackKind = 'video' | 'audio';
+
 export interface ClipDragState {
   readonly primaryClipId: ClipId;
   readonly previews: readonly ClipDragPreview[];
+  /** When set, releasing the drag adds a track and moves clips onto it. */
+  readonly autoCreateTrack: AutoCreateTrackKind | null;
 }
 
 export interface ClipTrimPreview {
