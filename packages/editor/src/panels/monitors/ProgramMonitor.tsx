@@ -77,6 +77,7 @@ export function ProgramMonitor() {
   const decodeScale = useUiState((s) => s.playbackDecodeScale);
   const timeFormat = useTimeDisplayFormat();
   const playing = usePlaybackState((s) => s.playing);
+  const frameRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const video = videoRef.current;
     const audio = audioRef.current;
@@ -108,12 +109,18 @@ export function ProgramMonitor() {
       <div
         ref={areaRef}
         className="relative flex min-h-0 flex-1 overflow-auto bg-surface-0"
-        onDoubleClick={() => runtime.stores.ui.getState().setProgramScale('fit')}
+        onDoubleClick={(event) => {
+          if (event.target === event.currentTarget) runtime.stores.ui.getState().setProgramScale('fit');
+        }}
       >
         <div
+          ref={frameRef}
           className="relative m-auto shrink-0 overflow-hidden bg-black"
           style={{ width: size.width, height: size.height }}
           data-testid="program-frame"
+          onDoubleClick={(event) => {
+            if (event.target === event.currentTarget) runtime.stores.ui.getState().setProgramScale('fit');
+          }}
         >
           <video
             ref={videoRef}

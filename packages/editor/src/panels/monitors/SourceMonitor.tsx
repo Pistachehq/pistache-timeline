@@ -73,9 +73,11 @@ export function SourceMonitor() {
 
   const durationSeconds = asset ? mediaTimeToSeconds(asset.duration) : 0;
 
+  const isImage = asset?.kind === 'image';
   const usesVideo = asset?.hasVideo ?? false;
-
+  const showPicture = usesVideo || isImage;
   const usesAudio = asset?.hasAudio ?? false;
+  const pictureUrl = isImage && handle ? handle.url : null;
 
 
 
@@ -178,7 +180,7 @@ export function SourceMonitor() {
 
     };
 
-  }, [runtime, usesVideo]);
+  }, [runtime, usesVideo, isImage]);
 
 
 
@@ -186,13 +188,13 @@ export function SourceMonitor() {
 
     videoPlayerRef.current?.load(usesVideo ? handle : null);
 
-    audioPlayerRef.current?.load(usesAudio && !usesVideo ? handle : null);
+    audioPlayerRef.current?.load(usesAudio && !showPicture ? handle : null);
 
     setTime(0);
 
     lastPreviewClipId.current = null;
 
-  }, [handle, usesVideo, usesAudio]);
+  }, [handle, usesVideo, usesAudio, showPicture]);
 
 
 
@@ -318,6 +320,16 @@ export function SourceMonitor() {
 
         />
 
+        {pictureUrl ? (
+          <img
+            src={pictureUrl}
+            alt=""
+            draggable={false}
+            className="h-full w-full object-contain"
+            data-testid="source-image"
+          />
+        ) : null}
+
         <audio ref={audioRef} className="hidden" aria-hidden tabIndex={-1} />
 
         {!asset ? (
@@ -334,25 +346,9 @@ export function SourceMonitor() {
 
           />
 
-        ) : !usesVideo ? (
+        ) : !showPicture ? (
 
           <AudioLines className="size-10 text-clip-audio-strong" aria-hidden />
-
-        ) : null}
-
-        {entry?.thumbnail && !usesVideo ? (
-
-          <img
-
-            src={entry.thumbnail}
-
-            alt=""
-
-            draggable={false}
-
-            className="pointer-events-none absolute bottom-3 left-3 h-14 w-[6.5rem] rounded-xs border border-line-strong object-cover shadow-sm"
-
-          />
 
         ) : null}
 
