@@ -3,7 +3,7 @@ import { formatSeconds } from '@timeline/shared';
 import { cn, IconButton } from '@timeline/ui';
 import { AudioLines, Film, ImageIcon, Link2Off, ListPlus, Loader2, Trash2 } from 'lucide-react';
 import { memo, type MouseEvent } from 'react';
-import { useMediaState, useRuntime, useSelectionState } from '../../runtime/context';
+import { useMediaState, useRuntime, useSelectionState, useUiState } from '../../runtime/context';
 import { ASSET_DRAG_TYPE } from '../dnd';
 
 function MediaThumb({ asset }: { asset: MediaAsset }) {
@@ -51,6 +51,7 @@ export const MediaListItem = memo(function MediaListItem({
 }) {
   const runtime = useRuntime();
   const selected = useSelectionState((s) => s.assetIds.includes(asset.id));
+  const popIn = useUiState((s) => s.mediaBinPopInIds.includes(asset.id));
   const status = useMediaState((s) => s.entries[asset.id]?.status);
   const offline = offlineBadge(status);
 
@@ -59,6 +60,7 @@ export const MediaListItem = memo(function MediaListItem({
       className={cn(
         'group relative list-none',
         selected && 'z-10',
+        popIn && 'animate-tl-pop-in',
       )}
       data-media-asset-id={asset.id}
       draggable={!offline}
@@ -78,6 +80,7 @@ export const MediaListItem = memo(function MediaListItem({
         className={cn(
           'flex w-full flex-col rounded-sm p-1 text-left outline-none',
           selected ? 'bg-accent-muted ring-1 ring-accent/40' : 'hover:bg-surface-3',
+          'transition-[background-color,box-shadow] duration-150',
         )}
         aria-pressed={selected}
         onClick={onSelectClick}

@@ -1,4 +1,12 @@
 import { timecodeBase, type FrameRate, type TimeDisplayFormat } from '@timeline/core';
+import { RULER_HEIGHT } from './layout';
+
+/** True when the pointer is over the timeline time ruler (wheel scrubs the playhead). */
+export function wheelShouldScrubPlayhead(scroller: HTMLElement, clientY: number): boolean {
+  const rect = scroller.getBoundingClientRect();
+  const localY = clientY - rect.top;
+  return localY >= 0 && localY <= RULER_HEIGHT;
+}
 
 function wheelTicks(deltaY: number, deltaMode: number): number {
   if (deltaY === 0) return 0;

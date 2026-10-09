@@ -30,7 +30,7 @@ import { TimelineRuler } from './TimelineRuler';
 import { TimelineToolbar } from './TimelineToolbar';
 import { TrackHeader } from './TrackHeader';
 import { TrackLane } from './TrackLane';
-import { playheadStepFromWheel } from './timeline-wheel-playhead';
+import { playheadStepFromWheel, wheelShouldScrubPlayhead } from './timeline-wheel-playhead';
 import { useVisibleRange } from './use-visible-range';
 
 const WHEEL_ZOOM_SENSITIVITY = 0.0015;
@@ -120,6 +120,8 @@ export function TimelinePanel() {
         ui.getState().setZoom(ui.getState().pixelsPerFrame * Math.exp(-event.deltaY * WHEEL_ZOOM_SENSITIVITY));
         return;
       }
+
+      if (!wheelShouldScrubPlayhead(scroller, event.clientY)) return;
 
       const sequence = getActiveSequence(project.getState().project);
       if (!sequence) return;

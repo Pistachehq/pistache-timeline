@@ -55,7 +55,6 @@ export const ClipItem = memo(function ClipItem({
   const waveformGain = clipWaveformGainLinear(clip.audio.volume, clip.audio.muted, trackVolume, trackMuted);
   const activeTrim = useUiState((s) => s.clipTrim);
   const isTrimPrimary = activeTrim?.primaryClipId === clip.id;
-
   if (drag && !dragGhost && drag.trackId !== track.id) return null;
 
   const crossTrackGhost = dragGhost && drag !== null;

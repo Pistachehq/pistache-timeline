@@ -2,7 +2,7 @@ import { listMediaBinFolderContents, type MediaAssetId, type MediaBinFolder } fr
 import { cn, IconButton } from '@timeline/ui';
 import { Folder, Pencil, Trash2 } from 'lucide-react';
 import { memo, useCallback, useState, type DragEvent } from 'react';
-import { useRuntime, useProjectState } from '../../runtime/context';
+import { useProjectState, useRuntime, useUiState } from '../../runtime/context';
 import { ASSET_DRAG_TYPE } from '../dnd';
 import { assetIdsForBinMove } from './media-bin-selection';
 
@@ -18,6 +18,7 @@ export const MediaFolderGridItem = memo(function MediaFolderGridItem({
   const { folders, assets } = listMediaBinFolderContents(project, folder.id);
   const childCount = folders.length + assets.length;
   const [dropActive, setDropActive] = useState(false);
+  const popIn = useUiState((s) => s.mediaBinPopInIds.includes(folder.id));
 
   const onDragOver = useCallback((event: DragEvent) => {
     if (!event.dataTransfer.types.includes(ASSET_DRAG_TYPE)) return;
@@ -48,7 +49,7 @@ export const MediaFolderGridItem = memo(function MediaFolderGridItem({
 
   return (
     <li
-      className="group relative list-none"
+      className={cn('group relative list-none', popIn && 'animate-tl-pop-spring')}
       onDragOver={onDragOver}
       onDragLeave={onDragLeave}
       onDrop={onDrop}
@@ -59,6 +60,7 @@ export const MediaFolderGridItem = memo(function MediaFolderGridItem({
         className={cn(
           'flex w-full flex-col rounded-sm p-1 text-left outline-none hover:bg-surface-3',
           dropActive && 'bg-accent/20 ring-1 ring-accent/50',
+          'transition-[background-color,box-shadow] duration-150',
         )}
         onDoubleClick={onOpen}
         title={`${folder.name}\nDouble-click to open.`}

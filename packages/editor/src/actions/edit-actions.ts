@@ -279,7 +279,9 @@ export function createEditActions(services: EditorServices) {
     },
 
     splitClipAt(clipId: ClipId, frame: number): boolean {
-      return run('Split Clip', (project, sequence) => splitClip(project, { sequenceId: sequence.id, clipId, frame }));
+      return run('Split Clip', (project, sequence) =>
+        splitClip(project, { sequenceId: sequence.id, clipId, frame }),
+      );
     },
 
     trimClipToEdge(clipId: ClipId, edge: 'start' | 'end', frame: number): boolean {

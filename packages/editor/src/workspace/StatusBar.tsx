@@ -39,7 +39,15 @@ function StatusMessage() {
   if (!status) return <span className="text-fg-subtle">Ready</span>;
   const Icon = TONE_ICON[status.tone];
   return (
-    <span role="status" className={cn('flex min-w-0 items-center gap-1.5', TONE_CLASS[status.tone])} data-testid="status-message">
+    <span
+      key={status.id}
+      role="status"
+      className={cn(
+        'flex min-w-0 items-center gap-1.5 animate-tl-slide-up',
+        TONE_CLASS[status.tone],
+      )}
+      data-testid="status-message"
+    >
       <Icon className="size-3.5 shrink-0" />
       <span className="truncate">{status.text}</span>
     </span>

@@ -133,6 +133,7 @@ export function createMediaActions(services: EditorServices) {
     for (const { asset, handle } of imported) markOnline(asset, handle);
     const first = assets[0];
     if (first) selection.getState().selectAsset(first.id);
+    if (assets.length > 0) ui.getState().flashMediaBinPopIn(assets.map((a) => a.id));
 
     if (failures.length > 0) {
       const importedCount = assets.length > 0 ? `Imported ${assets.length}; ` : '';
@@ -289,6 +290,7 @@ export function createMediaActions(services: EditorServices) {
       const created = Object.values(result.value.mediaBinFolders).find(
         (f) => f.parentId === parentId && f.name === name,
       );
+      if (created) ui.getState().flashMediaBinPopIn([created.id]);
       return created?.id ?? null;
     },
 

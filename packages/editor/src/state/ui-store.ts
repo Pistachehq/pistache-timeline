@@ -1,4 +1,10 @@
-import { type ClipId, clampZoom, type MediaAssetId, type MediaBinFolderId, type TrackId } from '@timeline/core';
+import {
+  type ClipId,
+  clampZoom,
+  type MediaAssetId,
+  type MediaBinFolderId,
+  type TrackId,
+} from '@timeline/core';
 import { createId } from '@timeline/shared';
 import { createStore, type StoreApi } from 'zustand/vanilla';
 
@@ -99,7 +105,8 @@ export interface UiState {
   readonly playbackMeterPeak: number;
   /** Open folder in the project media bin (`null` = bin root). */
   readonly mediaBinOpenFolderId: MediaBinFolderId | null;
-
+  /** Folder/asset ids playing a short enter animation in the media bin. */
+  readonly mediaBinPopInIds: readonly string[];
   setTool(tool: EditTool): void;
   setZoom(pixelsPerFrame: number): void;
   setProgramScale(scale: MonitorScale): void;
@@ -122,9 +129,12 @@ export interface UiState {
   setAssetDrag(assetId: MediaAssetId | null): void;
   setPlaybackMeter(clipId: ClipId | null, peak: number): void;
   setMediaBinOpenFolderId(folderId: MediaBinFolderId | null): void;
+  flashMediaBinPopIn(ids: readonly string[]): void;
 }
 
 export type UiStore = StoreApi<UiState>;
+
+const MEDIA_BIN_POP_MS = 480;
 
 export function createUiStore(): UiStore {
   return createStore<UiState>()((set, get) => ({
@@ -145,6 +155,7 @@ export function createUiStore(): UiStore {
     playbackMeterClipId: null,
     playbackMeterPeak: 0,
     mediaBinOpenFolderId: null,
+    mediaBinPopInIds: [],
 
     setTool: (tool) => set({ tool }),
     setZoom: (pixelsPerFrame) => set({ pixelsPerFrame: clampZoom(pixelsPerFrame) }),
@@ -214,5 +225,19 @@ export function createUiStore(): UiStore {
     setPlaybackMeter: (playbackMeterClipId, playbackMeterPeak) =>
       set({ playbackMeterClipId, playbackMeterPeak: Math.max(0, Math.min(1, playbackMeterPeak)) }),
     setMediaBinOpenFolderId: (mediaBinOpenFolderId) => set({ mediaBinOpenFolderId }),
+
+    flashMediaBinPopIn(ids) {
+      const unique = [...new Set(ids.filter(Boolean))];
+      if (unique.length === 0) return;
+      set((state) => ({
+        mediaBinPopInIds: [...new Set([...state.mediaBinPopInIds, ...unique])],
+      }));
+      window.setTimeout(() => {
+        const drop = new Set(unique);
+        set((state) => ({
+          mediaBinPopInIds: state.mediaBinPopInIds.filter((id) => !drop.has(id)),
+        }));
+      }, MEDIA_BIN_POP_MS);
+    },
   }));
 }

@@ -121,8 +121,10 @@ export function MediaBinView() {
     [orderedAssetIds, runtime.stores.selection],
   );
 
+  const folderKey = openFolderId ?? 'root';
+
   return (
-    <>
+    <div key={folderKey} className="flex min-h-0 flex-1 flex-col animate-tl-slide-up">
       <MediaBinMarqueeSelection gridRef={gridRef} />
       {currentFolder ? (
         <div className="shrink-0 truncate border-b border-line px-2.5 py-1 text-2xs text-fg-subtle">
@@ -132,7 +134,11 @@ export function MediaBinView() {
       <ul
         ref={gridRef}
         data-media-bin-grid
-        className={cn(GRID, 'min-h-0 flex-1 overflow-y-auto p-1.5', drop.active && 'rounded-sm bg-accent/10')}
+        className={cn(
+          GRID,
+          'min-h-0 flex-1 overflow-y-auto p-1.5 transition-colors duration-150',
+          drop.active && 'rounded-sm bg-accent/10',
+        )}
         aria-label="Media assets"
         onDragOver={drop.onDragOver}
         onDragLeave={drop.onDragLeave}
@@ -152,6 +158,6 @@ export function MediaBinView() {
           {counts.folders > 0 ? ` · ${counts.folders} folder${counts.folders === 1 ? '' : 's'}` : ''}
         </span>
       </div>
-    </>
+    </div>
   );
 }

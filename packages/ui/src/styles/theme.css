@@ -38,9 +38,9 @@
   --color-accent-fg: #ffffff;
 
   --color-playhead: #4c9bff;
-  /* Razor blade pointing left; hotspot at the tip (cut point). */
-  --cursor-razor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none'%3E%3Cpath d='M2 12 16 4.5v15Z' fill='%23e2e2e8' stroke='%23ffffff' stroke-width='1.25' stroke-linejoin='round'/%3E%3Cpath d='M2 12 16 9' stroke='%23ffffff' stroke-width='0.75' opacity='0.55'/%3E%3Cpath d='M16 8.5h5.5a1.25 1.25 0 0 1 1.25 1.25v4.5A1.25 1.25 0 0 1 21.5 15.5H16' fill='%235a5a62' stroke='%23b0b0b8' stroke-width='1'/%3E%3C/svg%3E")
-    2 12,
+  /* Slim razor cursor; hotspot at blade tip (cut point). */
+  --cursor-razor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none'%3E%3Cpath d='M1.5 12 11.75 8.35v7.3Z' fill='%23a8abb6'/%3E%3Cpath d='M1.5 12 11.75 8.35v7.3Z' stroke='%23e8eaef' stroke-width='0.4' stroke-linejoin='round'/%3E%3Cpath d='M2.8 12 10.2 9.15' stroke='%23ffffff' stroke-width='0.35' opacity='0.35' stroke-linecap='round'/%3E%3Cpath d='M11.75 9.5h5.75c.97 0 1.75.78 1.75 1.75v1.5c0 .97-.78 1.75-1.75 1.75H11.75' fill='%23202024' stroke='%235a5a64' stroke-width='0.45'/%3E%3Ccircle cx='15.2' cy='12' r='0.55' fill='%237a7a86'/%3E%3C/svg%3E")
+    1 12,
     crosshair;
 
   --color-clip-video: #5b5bd6;
@@ -57,6 +57,74 @@
   --radius-md: 4px;
 
   --shadow-popover: 0 8px 24px rgb(0 0 0 / 0.45), 0 0 0 1px rgb(255 255 255 / 0.04);
+
+  --animate-tl-pop-in: tl-pop-in 280ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-tl-pop-spring: tl-pop-spring 420ms cubic-bezier(0.34, 1.4, 0.64, 1) both;
+  --animate-tl-slide-up: tl-slide-up 240ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-tl-dialog-in: tl-dialog-in 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-tl-fade-in: tl-fade-in 180ms ease-out both;
+}
+
+@keyframes tl-pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes tl-pop-spring {
+  0% {
+    opacity: 0;
+    transform: scale(0.72);
+  }
+
+  65% {
+    transform: scale(1.05);
+  }
+
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes tl-slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes tl-dialog-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes tl-fade-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
 }
 
 @utility cursor-razor {
@@ -126,6 +194,11 @@
 
   dialog::backdrop {
     background: rgb(0 0 0 / 0.55);
+    animation: tl-fade-in 180ms ease-out both;
+  }
+
+  dialog[open] {
+    animation: tl-dialog-in 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
   }
 
   @media (prefers-reduced-motion: reduce) {
