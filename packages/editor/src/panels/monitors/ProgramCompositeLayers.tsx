@@ -34,6 +34,7 @@ import {
 import { hitTestProgramClipAt, letterboxMediaSize, programClipWrapperStyle } from './program-clip-layout';
 import { ProgramBlurOverlay } from './ProgramBlurOverlay';
 import { ProgramCropOverlay } from './ProgramCropOverlay';
+import { ProgramTextLayer } from './ProgramTextLayer';
 import { ProgramTransformOverlay } from './ProgramTransformOverlay';
 
 const LAYER_Z = 10;
@@ -52,7 +53,7 @@ function syncStackVideos(
 ): void {
   for (const { clip } of stack) {
     const el = videos.get(clip.id);
-    if (!el) continue;
+    if (!el || !clip.assetId) continue;
     const asset = assets[clip.assetId];
     if (!asset || asset.kind === 'image' || !asset.hasVideo) continue;
 
@@ -94,8 +95,9 @@ function CompositeLayer({
   decodeFactor,
   registerVideo,
 }: LayerProps) {
-  const asset = useProjectState((s) => s.project.mediaAssets[clip.assetId]);
-  const entry = useMediaState((s) => s.entries[clip.assetId]);
+  const assetId = clip.assetId;
+  const asset = useProjectState((s) => (assetId ? s.project.mediaAssets[assetId] : undefined));
+  const entry = useMediaState((s) => (assetId ? s.entries[assetId] : undefined));
   const selected = useSelectionState((s) => s.clipIds.includes(clip.id));
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const blurCopyRef = useRef<HTMLVideoElement | null>(null);
@@ -290,6 +292,8 @@ export function ProgramCompositeLayers({ sequence }: { readonly sequence: Sequen
     return () => cancelAnimationFrame(raf);
   }, [playing, runtime, syncVideos]);
 
+  const tool = useUiState((s) => s.tool);
+
   const dragRef = useRef<{
     clipId: ClipId;
     pointerId: number;
@@ -309,6 +313,33 @@ export function ProgramCompositeLayers({ sequence }: { readonly sequence: Sequen
     const frame = containerRef.current;
     if (!frame) return;
     const hitId = hitTestProgramClipAt(event.clientX, event.clientY, frame, stack);
+    if (tool === 'text') {
+      event.preventDefault();
+      event.stopPropagation();
+      const hit = hitId ? stack.find(({ clip }) => clip.id === hitId) : undefined;
+      if (hit?.clip.text) {
+        runtime.stores.selection.getState().selectClips([hit.clip.id]);
+        runtime.stores.ui.getState().setTextEditingClipId(hit.clip.id);
+        return;
+      }
+      const rect = frame.getBoundingClientRect();
+      const nx = rect.width > 0 ? (event.clientX - rect.left) / rect.width : 0.5;
+      const ny = rect.height > 0 ? (event.clientY - rect.top) / rect.height : 0.5;
+      const positionX = (nx - 0.5) * sequence.resolution.width;
+      const positionY = (ny - 0.5) * sequence.resolution.height;
+      const track = [...sequence.videoTracks].reverse().find((item) => !item.locked);
+      if (!track) {
+        runtime.stores.ui.getState().notify('Unlock a video track to add text.', 'warning');
+        return;
+      }
+      runtime.actions.edit.addTextClip({
+        trackId: track.id,
+        start: playhead,
+        positionX,
+        positionY,
+      });
+      return;
+    }
     if (!hitId) return;
     event.preventDefault();
     event.stopPropagation();
@@ -373,23 +404,36 @@ export function ProgramCompositeLayers({ sequence }: { readonly sequence: Sequen
   return (
     <div
       ref={containerRef}
-      className="absolute inset-0 cursor-default"
+      className={tool === 'text' ? 'absolute inset-0 cursor-text' : 'absolute inset-0 cursor-default'}
       onPointerDown={onPointerDown}
       data-testid="program-composite"
     >
-      {stack.map(({ clip }, index) => (
-        <CompositeLayer
-          key={clip.id}
-          clip={clip}
-          sequence={sequence}
-          playhead={playhead}
-          stackIndex={index}
-          frameWidth={frameWidth}
-          frameHeight={frameHeight}
-          decodeFactor={decodeFactor}
-          registerVideo={registerVideo}
-        />
-      ))}
+      {stack.map(({ clip }, index) =>
+        clip.text ? (
+          <ProgramTextLayer
+            key={clip.id}
+            clip={clip}
+            sequence={sequence}
+            playhead={playhead}
+            stackIndex={index}
+            frameWidth={frameWidth}
+            frameHeight={frameHeight}
+            selected={selectedIds.includes(clip.id)}
+          />
+        ) : (
+          <CompositeLayer
+            key={clip.id}
+            clip={clip}
+            sequence={sequence}
+            playhead={playhead}
+            stackIndex={index}
+            frameWidth={frameWidth}
+            frameHeight={frameHeight}
+            decodeFactor={decodeFactor}
+            registerVideo={registerVideo}
+          />
+        ),
+      )}
       {cropEditId ? (
         <ProgramCropOverlay
           sequence={sequence}

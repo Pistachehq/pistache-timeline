@@ -13,6 +13,12 @@ import {
   type VideoEffect,
 } from '../model/effects';
 import {
+  DEFAULT_CLIP_TEXT,
+  TEXT_ANIMATION_IDS,
+  type ClipText,
+  type TextShadow,
+} from '../model/text';
+import {
   type AudioTrack,
   type Clip,
   type ClipId,
@@ -260,12 +266,55 @@ function parseClipEffects(value: unknown, path: string): ClipEffects {
   };
 }
 
+function parseTextShadow(value: unknown, path: string): TextShadow {
+  const obj = readObject(value, path);
+  return {
+    color: readString(obj, 'color', path),
+    offsetX: readNumber(obj, 'offsetX', path),
+    offsetY: readNumber(obj, 'offsetY', path),
+    blur: readNumber(obj, 'blur', path),
+  };
+}
+
+function parseClipText(value: unknown, path: string): ClipText {
+  const obj = readObject(value, path);
+  const align =
+    obj.align === undefined
+      ? DEFAULT_CLIP_TEXT.align
+      : readEnum(obj, 'align', `${path}.align`, ['left', 'center', 'right', 'justify']);
+  const animation =
+    obj.animation === undefined
+      ? DEFAULT_CLIP_TEXT.animation
+      : readEnum(obj, 'animation', `${path}.animation`, [...TEXT_ANIMATION_IDS]);
+  return {
+    content: readString(obj, 'content', path),
+    fontFamily: obj.fontFamily === undefined ? DEFAULT_CLIP_TEXT.fontFamily : readString(obj, 'fontFamily', path),
+    fontSize: obj.fontSize === undefined ? DEFAULT_CLIP_TEXT.fontSize : readNumber(obj, 'fontSize', path),
+    fontDataUrl: obj.fontDataUrl == null ? null : readString(obj, 'fontDataUrl', path),
+    color: obj.color === undefined ? DEFAULT_CLIP_TEXT.color : readString(obj, 'color', path),
+    bold: obj.bold === undefined ? false : readBoolean(obj, 'bold', path),
+    italic: obj.italic === undefined ? false : readBoolean(obj, 'italic', path),
+    underline: obj.underline === undefined ? false : readBoolean(obj, 'underline', path),
+    strike: obj.strike === undefined ? false : readBoolean(obj, 'strike', path),
+    letterSpacing: obj.letterSpacing === undefined ? 0 : readNumber(obj, 'letterSpacing', path),
+    align,
+    animationFrames:
+      obj.animationFrames === undefined ? DEFAULT_CLIP_TEXT.animationFrames : readNumber(obj, 'animationFrames', path),
+    shadow: obj.shadow == null ? null : parseTextShadow(obj.shadow, `${path}.shadow`),
+    outlineWidth: obj.outlineWidth === undefined ? 0 : readNumber(obj, 'outlineWidth', path),
+    outlineColor: obj.outlineColor === undefined ? DEFAULT_CLIP_TEXT.outlineColor : readString(obj, 'outlineColor', path),
+    animation,
+  };
+}
+
 function parseClip(value: unknown, path: string): Clip {
   const obj = readObject(value, path);
   const audio = readObject(obj.audio, `${path}.audio`);
+  const text = obj.text == null ? null : parseClipText(obj.text, `${path}.text`);
   return {
     id: readString(obj, 'id', path) as ClipId,
-    assetId: readString(obj, 'assetId', path) as MediaAssetId,
+    assetId: text ? null : (readString(obj, 'assetId', path) as MediaAssetId),
+    text,
     trackId: readString(obj, 'trackId', path) as TrackId,
     name: readString(obj, 'name', path),
     enabled: readBoolean(obj, 'enabled', path),

@@ -70,6 +70,7 @@ function sourceSecondsForClip(clip: Clip, timeSeconds: number, rate: FrameRate):
 function uniqueAudioAssetIds(sequence: Sequence, project: Project): MediaAssetId[] {
   const ids = new Set<MediaAssetId>();
   for (const clip of Object.values(sequence.clips)) {
+    if (!clip.assetId) continue;
     const asset = project.mediaAssets[clip.assetId];
     if (asset?.hasAudio) ids.add(clip.assetId);
   }
@@ -129,6 +130,7 @@ export async function mixSequenceAudio(
     let l = 0;
     let r = 0;
     for (const clip of getAudibleClipsAt(sequence, seqFrame, project.mediaAssets)) {
+      if (!clip.assetId) continue;
       const buffer = buffers.get(clip.assetId);
       if (!buffer) continue;
       const sourceSeconds = sourceSecondsForClip(clip, t, sequence.frameRate);

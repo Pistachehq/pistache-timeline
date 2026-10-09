@@ -1,6 +1,6 @@
 import { MAX_PIXELS_PER_FRAME, MIN_PIXELS_PER_FRAME } from '@timeline/core';
 import { IconButton, Slider } from '@timeline/ui';
-import { Magnet, Maximize2, MousePointer2, Scissors, SquareSplitHorizontal, ZoomIn, ZoomOut } from 'lucide-react';
+import { Magnet, Maximize2, MousePointer2, Scissors, SquareSplitHorizontal, Type, ZoomIn, ZoomOut } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 import { executeCommand, shortcutLabel } from '../../commands/commands';
 import { useRuntime, useUiState } from '../../runtime/context';
@@ -49,6 +49,14 @@ export function TimelineToolbar({ onZoomToFit }: { onZoomToFit: () => void }) {
         pressed={tool === 'razor'}
         tone="accent"
         onClick={() => executeCommand('tool.razor', runtime)}
+      />
+      <IconButton
+        label="Text tool"
+        shortcut={shortcutLabel('tool.text')}
+        icon={<Type />}
+        pressed={tool === 'text'}
+        tone="accent"
+        onClick={() => executeCommand('tool.text', runtime)}
       />
       <IconButton
         label="Split at playhead"

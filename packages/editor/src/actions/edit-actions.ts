@@ -1,5 +1,6 @@
 import {
   addClip,
+  addTextClip,
   addTrack,
   type Clip,
   type ClipAudio,
@@ -30,10 +31,12 @@ import {
   mergeClipTransitions,
   updateClipAudio,
   updateClipEffects,
+  updateClipText,
   updateClipTransform,
   updateClipTransitions,
   updateTrack,
   type ClipEffects,
+  type ClipText,
   type ClipTransitions,
 } from '@timeline/core';
 import { ok, type Result, type TimelineError } from '@timeline/shared';
@@ -449,6 +452,43 @@ export function createEditActions(services: EditorServices) {
           transitions: mergeClipTransitions(clip.transitions, patch),
         });
       });
+    },
+
+    addTextClip(input: {
+      trackId: TrackId;
+      start: number;
+      positionX?: number;
+      positionY?: number;
+    }): ClipId | null {
+      const sequence = currentSequence(services);
+      if (!sequence) {
+        ui.getState().notify('There is no active sequence.', 'error');
+        return null;
+      }
+      const clipId = newClipId();
+      const result = projectStore.getState().apply('Add Text', (project) =>
+        addTextClip(project, {
+          sequenceId: sequence.id,
+          trackId: input.trackId,
+          start: input.start,
+          clipId,
+          ...(input.positionX !== undefined ? { positionX: input.positionX } : {}),
+          ...(input.positionY !== undefined ? { positionY: input.positionY } : {}),
+        }),
+      );
+      if (!result.ok) {
+        ui.getState().notify(result.error.message, result.error.code === 'LOCKED' ? 'warning' : 'error');
+        return null;
+      }
+      selection.getState().selectClips([clipId]);
+      ui.getState().setTextEditingClipId(clipId);
+      ui.getState().setTool('select');
+      playback.getState().setPlayhead(input.start);
+      return clipId;
+    },
+
+    setClipText(clipId: ClipId, text: Partial<ClipText>, label = 'Edit Text'): boolean {
+      return run(label, (project, sequence) => updateClipText(project, { sequenceId: sequence.id, clipId, text }));
     },
 
     setClipEffects(clipId: ClipId, effects: ClipEffects, label = 'Change Effects'): boolean {

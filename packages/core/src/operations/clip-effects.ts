@@ -1,20 +1,24 @@
 import { clamp, ok } from '@timeline/shared';
 import {
+  maxTransitionFramesForClip,
   TRANSITION_LIMITS,
   type ClipEdgeTransition,
   type ClipEffects,
   type ClipTransitions,
 } from '../model/effects';
+import { getClipDuration } from '../model/queries';
 import { type Clip, type ClipId, type Project, type SequenceId } from '../model/types';
 import { type EditResult, fail, updateSequence } from './common';
 
-function clampDuration(frames: number): number {
-  return Math.round(clamp(frames, TRANSITION_LIMITS.durationFrames.min, TRANSITION_LIMITS.durationFrames.max));
+function clampDuration(frames: number, maxFrames: number): number {
+  return Math.round(
+    clamp(frames, TRANSITION_LIMITS.durationFrames.min, Math.min(TRANSITION_LIMITS.durationFrames.max, maxFrames)),
+  );
 }
 
-function normalizeEdge(edge: ClipEdgeTransition | null): ClipEdgeTransition | null {
+function normalizeEdge(edge: ClipEdgeTransition | null, maxFrames: number): ClipEdgeTransition | null {
   if (!edge) return null;
-  const durationFrames = clampDuration(edge.durationFrames);
+  const durationFrames = clampDuration(edge.durationFrames, maxFrames);
   if (durationFrames <= 0 || edge.videoKind === 'none') return null;
   if (edge.videoKind === 'library' && !edge.libraryId) return null;
   const libraryId = edge.videoKind === 'library' ? edge.libraryId : null;
@@ -31,8 +35,8 @@ export function updateClipTransitions(project: Project, input: UpdateClipTransit
   return updateClipField(project, input.sequenceId, input.clipId, (clip) => ({
     ...clip,
     transitions: {
-      in: normalizeEdge(input.transitions.in),
-      out: normalizeEdge(input.transitions.out),
+      in: normalizeEdge(input.transitions.in, maxTransitionFramesForClip(getClipDuration(clip))),
+      out: normalizeEdge(input.transitions.out, maxTransitionFramesForClip(getClipDuration(clip))),
     },
   }));
 }
@@ -70,7 +74,7 @@ function updateClipField(
 
 export function mergeClipTransitions(current: ClipTransitions, patch: Partial<ClipTransitions>): ClipTransitions {
   return {
-    in: patch.in !== undefined ? normalizeEdge(patch.in) : current.in,
-    out: patch.out !== undefined ? normalizeEdge(patch.out) : current.out,
+    in: patch.in !== undefined ? normalizeEdge(patch.in, TRANSITION_LIMITS.durationFrames.max) : current.in,
+    out: patch.out !== undefined ? normalizeEdge(patch.out, TRANSITION_LIMITS.durationFrames.max) : current.out,
   };
 }

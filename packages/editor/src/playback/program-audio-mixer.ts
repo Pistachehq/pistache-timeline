@@ -238,6 +238,7 @@ export class ProgramAudioMixer {
 
     for (const clip of clips) {
       active.add(clip.id);
+      if (!clip.assetId) continue;
       let lane = this.#lanes.get(clip.id);
       const handle = resolveHandle(clip.assetId);
       if (!handle) continue;

@@ -10,7 +10,7 @@ import { createStore, type StoreApi } from 'zustand/vanilla';
 import { type EffectLibraryPayload } from '../panels/dnd';
 import { type EffectCategoryId } from '../panels/project/effects-catalog';
 
-export type EditTool = 'select' | 'razor';
+export type EditTool = 'select' | 'razor' | 'text';
 export type MonitorScale = 'fit' | '25' | '50' | '100';
 /** Scales program-monitor decode size (lighter playback on long/high-res clips). */
 export type PlaybackDecodeScale = '1' | '0.5' | '0.25' | '0.125';
@@ -124,6 +124,8 @@ export interface UiState {
   readonly clipCropEditId: ClipId | null;
   /** Clip whose blur mask is being edited in the program monitor. */
   readonly clipBlurEditId: ClipId | null;
+  /** Text clip being typed in the program monitor. */
+  readonly textEditingClipId: ClipId | null;
   /** Folder/asset ids playing a short enter animation in the media bin. */
   readonly mediaBinPopInIds: readonly string[];
   setTool(tool: EditTool): void;
@@ -154,6 +156,7 @@ export interface UiState {
   setEffectDrag(payload: EffectLibraryPayload | null): void;
   setClipCropEditId(clipId: ClipId | null): void;
   setClipBlurEditId(clipId: ClipId | null): void;
+  setTextEditingClipId(clipId: ClipId | null): void;
   flashMediaBinPopIn(ids: readonly string[]): void;
 }
 
@@ -186,6 +189,7 @@ export function createUiStore(): UiStore {
     effectDrag: null,
     clipCropEditId: null,
     clipBlurEditId: null,
+    textEditingClipId: null,
     mediaBinPopInIds: [],
 
     setTool: (tool) => set({ tool }),
@@ -265,6 +269,7 @@ export function createUiStore(): UiStore {
       set({ clipCropEditId, clipBlurEditId: clipCropEditId ? null : get().clipBlurEditId }),
     setClipBlurEditId: (clipBlurEditId) =>
       set({ clipBlurEditId, clipCropEditId: clipBlurEditId ? null : get().clipCropEditId }),
+    setTextEditingClipId: (textEditingClipId) => set({ textEditingClipId }),
 
     flashMediaBinPopIn(ids) {
       const unique = [...new Set(ids.filter(Boolean))];

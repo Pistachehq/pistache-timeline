@@ -25,6 +25,7 @@ export type CommandId =
   | 'sequence.addAudioTrack'
   | 'tool.select'
   | 'tool.razor'
+  | 'tool.text'
   | 'playback.toggle'
   | 'playback.stepBack'
   | 'playback.stepForward'
@@ -135,6 +136,12 @@ export const COMMANDS: readonly Command[] = [
     label: 'Razor Tool',
     run: (rt) => rt.stores.ui.getState().setTool('razor'),
     isChecked: (rt) => rt.stores.ui.getState().tool === 'razor',
+  },
+  {
+    id: 'tool.text',
+    label: 'Text Tool',
+    run: (rt) => rt.stores.ui.getState().setTool('text'),
+    isChecked: (rt) => rt.stores.ui.getState().tool === 'text',
   },
 
   {
@@ -254,6 +261,7 @@ export const DEFAULT_KEYMAP: Keymap = {
   'clip.toggleEnabled': ['Shift+E'],
   'tool.select': ['V'],
   'tool.razor': ['C'],
+  'tool.text': ['T'],
   'playback.toggle': ['Space'],
   'playback.stepBack': ['ArrowLeft'],
   'playback.stepForward': ['ArrowRight'],

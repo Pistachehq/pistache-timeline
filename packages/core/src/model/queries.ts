@@ -306,7 +306,7 @@ export function getAudibleClipsAt(
   const clips: Clip[] = [];
   const seen = new Set<ClipId>();
   const add = (clip: Clip) => {
-    if (seen.has(clip.id)) return;
+    if (seen.has(clip.id) || !clip.assetId) return;
     const asset = assets[clip.assetId];
     if (!asset?.hasAudio) return;
     seen.add(clip.id);

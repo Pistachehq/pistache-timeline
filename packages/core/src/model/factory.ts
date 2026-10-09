@@ -1,5 +1,6 @@
 import { createId } from '@timeline/shared';
 import { type FrameRate, type MediaTime } from '../time/rational';
+import { type ClipText } from './text';
 import {
   CURRENT_SCHEMA_VERSION,
   DEFAULT_CLIP_AUDIO,
@@ -146,7 +147,8 @@ export function createMediaAsset(options: CreateMediaAssetOptions): MediaAsset {
 
 export interface CreateClipOptions {
   readonly id?: ClipId;
-  readonly assetId: MediaAssetId;
+  readonly assetId: MediaAssetId | null;
+  readonly text?: ClipText | null;
   readonly trackId: TrackId;
   readonly name: string;
   readonly start: number;
@@ -159,6 +161,7 @@ export function createClip(options: CreateClipOptions): Clip {
   return {
     id: options.id ?? newClipId(),
     assetId: options.assetId,
+    text: options.text ?? null,
     trackId: options.trackId,
     name: options.name,
     enabled: true,

@@ -12,17 +12,20 @@ export function TimelineDurationField({
   frames,
   frameRate,
   disabled,
+  maxFrames,
   onChange,
 }: {
   readonly label: string;
   readonly frames: number;
   readonly frameRate: FrameRate;
   readonly disabled?: boolean;
+  /** Clip-relative cap. Falls back to the global transition limit. */
+  readonly maxFrames?: number;
   readonly onChange: (frames: number) => void;
 }) {
   const format = useTimeDisplayFormat();
   const min = TRANSITION_LIMITS.durationFrames.min;
-  const max = TRANSITION_LIMITS.durationFrames.max;
+  const max = Math.min(TRANSITION_LIMITS.durationFrames.max, maxFrames ?? TRANSITION_LIMITS.durationFrames.max);
 
   const clampFrames = useCallback(
     (n: number) => Math.round(Math.min(max, Math.max(min, n))),

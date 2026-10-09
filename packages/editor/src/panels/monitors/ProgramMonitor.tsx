@@ -41,7 +41,7 @@ function ProgramOverlay() {
   if (status === 'empty') {
     return (
       <EmptyState
-        className="absolute inset-0"
+        className="pointer-events-none absolute inset-0"
         icon={<Clapperboard />}
         title="The sequence is empty"
         description="Import media and add a clip to the timeline to preview it here."

@@ -167,7 +167,11 @@ export function TimelinePanel() {
     >
       <div
         ref={scrollerRef}
-        className={cn('relative min-h-0 flex-1 overflow-auto bg-surface-0', tool === 'razor' && 'cursor-razor')}
+        className={cn(
+          'relative min-h-0 flex-1 overflow-auto bg-surface-0',
+          tool === 'razor' && 'cursor-razor',
+          tool === 'text' && 'cursor-text',
+        )}
         data-testid="timeline-scroller"
       >
         <MarqueeSelection scrollerRef={scrollerRef} />

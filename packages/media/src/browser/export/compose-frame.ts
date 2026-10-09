@@ -4,8 +4,11 @@ import {
   effectiveClipOpacityPercent,
   libraryEffectClipPath,
   libraryEffectTransform,
+  textAnimationFrame,
+  textAnimationProgress,
   type ActiveVideoClip,
   type Clip,
+  type ClipText,
   type MediaAsset,
   type Sequence,
 } from '@timeline/core';
@@ -96,6 +99,81 @@ export function drawProgramFrame(
   ctx.restore();
 }
 
+function drawTextClip(
+  ctx: CanvasRenderingContext2D,
+  clip: Clip,
+  text: ClipText,
+  sequence: Sequence,
+  sequenceFrame: number,
+  width: number,
+  height: number,
+): void {
+  const progress =
+    text.animation === 'none'
+      ? 1
+      : textAnimationProgress(sequenceFrame - clip.start, text.animationFrames || 60);
+  const anim = textAnimationFrame(text.content, text.animation, progress);
+  const scaleX = width / sequence.resolution.width;
+  const scaleY = height / sequence.resolution.height;
+  const t = clip.transform;
+  const paint = clipTransitionPaint(clip, sequenceFrame);
+  const filter = [canvasFilterFromVideoEffects(clip.effects.video), paint.filter].filter(Boolean).join(' ');
+  ctx.save();
+  ctx.translate(width / 2 + t.positionX * scaleX, height / 2 + t.positionY * scaleY);
+  ctx.rotate((t.rotation * Math.PI) / 180);
+  ctx.scale((t.scaleX / 100) * scaleX, (t.scaleY / 100) * scaleY);
+  applyExtraTransform(ctx, [libraryEffectTransform(clip.effects.video), paint.transform].filter(Boolean).join(' '));
+  ctx.globalAlpha = effectiveClipOpacityPercent(clip, sequenceFrame, sequence) / 100;
+  if (filter) ctx.filter = filter;
+  const fontStyle = `${text.italic ? 'italic ' : ''}${text.bold ? '700 ' : '400 '}${text.fontSize}px "${text.fontFamily}"`;
+  ctx.font = fontStyle;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = text.color;
+  ctx.letterSpacing = `${text.letterSpacing + anim.letterSpacing}px`;
+  if (text.shadow) {
+    ctx.shadowColor = text.shadow.color;
+    ctx.shadowBlur = text.shadow.blur;
+    ctx.shadowOffsetX = text.shadow.offsetX;
+    ctx.shadowOffsetY = text.shadow.offsetY;
+  }
+  const pieces: { text: string; opacity: number; offsetY: number }[] = [];
+  for (const run of anim.runs) {
+    const parts = run.text.split('\n');
+    parts.forEach((part, index) => {
+      if (index > 0) pieces.push({ text: '\n', opacity: 1, offsetY: 0 });
+      if (part) pieces.push({ text: part, opacity: run.opacity, offsetY: run.offsetY });
+    });
+  }
+  const lines: { text: string; opacity: number; offsetY: number }[][] = [[]];
+  for (const piece of pieces) {
+    if (piece.text === '\n') lines.push([]);
+    else lines[lines.length - 1]?.push(piece);
+  }
+  const lineHeight = text.fontSize * 1.2;
+  lines.forEach((line, index) => {
+    const total = line.reduce((sum, part) => sum + ctx.measureText(part.text).width, 0);
+    let x = text.align === 'center' ? -total / 2 : text.align === 'right' ? -total : 0;
+    const y = (index - (lines.length - 1) / 2) * lineHeight;
+    for (const part of line) {
+      ctx.save();
+      ctx.globalAlpha *= part.opacity;
+      const py = y + part.offsetY;
+      if (text.outlineWidth > 0) {
+        ctx.lineWidth = text.outlineWidth * 2;
+        ctx.strokeStyle = text.outlineColor;
+        ctx.strokeText(part.text, x, py);
+      }
+      ctx.fillText(part.text, x, py);
+      x += ctx.measureText(part.text).width;
+      ctx.restore();
+    }
+  });
+  ctx.restore();
+  ctx.filter = 'none';
+  ctx.letterSpacing = '0px';
+}
+
 export function drawStackedProgramFrame(
   ctx: CanvasRenderingContext2D,
   options: DrawFrameOptions,
@@ -108,6 +186,11 @@ export function drawStackedProgramFrame(
   const { width, height } = options;
   drawGapFrame(ctx, width, height);
   for (const { clip } of stack) {
+    if (clip.text) {
+      drawTextClip(ctx, clip, clip.text, options.sequence, sequenceFrame, width, height);
+      continue;
+    }
+    if (!clip.assetId) continue;
     const asset = assets[clip.assetId];
     if (!asset) continue;
     const source =

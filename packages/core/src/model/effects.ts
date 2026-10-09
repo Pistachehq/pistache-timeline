@@ -92,5 +92,13 @@ export const DEFAULT_CLIP_TRANSITIONS: ClipTransitions = { in: null, out: null }
 export const DEFAULT_CLIP_EFFECTS: ClipEffects = { video: [], audio: [] };
 
 export const TRANSITION_LIMITS = {
-  durationFrames: { min: 0, max: 900 },
+  durationFrames: { min: 0, max: 1_000_000 },
 } as const;
+
+/** Frames that stay outside a transition so the clip keeps a short tail. */
+export const TRANSITION_TAIL_FRAMES = 1;
+
+/** Longest a transition may run on a clip, leaving a short tail at the end. */
+export function maxTransitionFramesForClip(clipDurationFrames: number): number {
+  return Math.max(TRANSITION_LIMITS.durationFrames.min, clipDurationFrames - TRANSITION_TAIL_FRAMES);
+}

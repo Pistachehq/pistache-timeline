@@ -1,4 +1,11 @@
-import { getClipEnd, getMaxClipSourceOutFrames, type Clip, type Project, type Sequence } from '@timeline/core';
+import {
+  getClipEnd,
+  getMaxClipSourceOutFrames,
+  TEXT_CLIP_MAX_SOURCE_FRAMES,
+  type Clip,
+  type Project,
+  type Sequence,
+} from '@timeline/core';
 import { type ClipTrimPreview } from '../../state/ui-store';
 
 const MIN_DURATION = 1;
@@ -45,6 +52,8 @@ export function buildTrimPreview(
 }
 
 function maxSourceOutForClip(project: Project, sequence: Sequence, clip: Clip): number {
+  if (clip.text) return TEXT_CLIP_MAX_SOURCE_FRAMES;
+  if (!clip.assetId) return 0;
   const asset = project.mediaAssets[clip.assetId];
   return asset ? getMaxClipSourceOutFrames(asset, sequence) : 0;
 }

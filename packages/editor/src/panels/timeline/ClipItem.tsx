@@ -10,7 +10,7 @@ import { AUDIO_TRACK_HEIGHT, MIN_LABEL_WIDTH } from './layout';
 import { useClipDrag } from './use-clip-drag';
 import { useClipEffectDrop } from './use-clip-effect-drop';
 import { useClipTrim } from './use-clip-trim';
-import { clipEffectCount } from './clip-transition-visual';
+import { clipEdgeTags, clipEffectCount } from './clip-transition-visual';
 
 interface ClipItemProps {
   clip: Clip;
@@ -33,9 +33,9 @@ export const ClipItem = memo(function ClipItem({
   const trimPreview = useUiState((s) => s.clipTrim?.previews.find((p) => p.clipId === clip.id) ?? null);
   const trimming = trimPreview !== null;
   const razor = useUiState((s) => s.tool === 'razor');
-  const thumbnail = useMediaState((s) => s.entries[clip.assetId]?.thumbnail ?? null);
-  const waveform = useMediaState((s) => s.entries[clip.assetId]?.waveform ?? null);
-  const status = useMediaState((s) => s.entries[clip.assetId]?.status);
+  const thumbnail = useMediaState((s) => (clip.assetId ? s.entries[clip.assetId]?.thumbnail : null) ?? null);
+  const waveform = useMediaState((s) => (clip.assetId ? s.entries[clip.assetId]?.waveform : null) ?? null);
+  const status = useMediaState((s) => (clip.assetId ? s.entries[clip.assetId]?.status : undefined));
   const asset = useAsset(clip.assetId);
   const sequence = useActiveSequence();
   const tool = useUiState((s) => s.tool);
@@ -45,6 +45,7 @@ export const ClipItem = memo(function ClipItem({
   const formatTime = useFormatDisplayTime();
 
   const offline = status === 'offline' || status === 'error';
+  const isText = clip.text !== null;
   const isVideo = track.kind === 'video';
   const sourceIn = trimPreview?.sourceIn ?? clip.sourceIn;
   const sourceOut = trimPreview?.sourceOut ?? clip.sourceOut;
@@ -63,6 +64,7 @@ export const ClipItem = memo(function ClipItem({
   const crossTrackGhost = dragGhost && drag !== null;
   const showDragOnLane = crossTrackGhost || (drag !== null && drag.trackId === track.id);
   const fxCount = clipEffectCount(clip);
+  const edgeTags = sequence ? clipEdgeTags(sequence, track, clip, width, pixelsPerFrame) : [];
 
   return (
     <div
@@ -75,15 +77,23 @@ export const ClipItem = memo(function ClipItem({
       data-clip-id={clip.id}
       className={cn(
         'absolute top-1 bottom-1 flex overflow-hidden rounded-xs border text-left text-2xs',
-        isVideo ? 'bg-clip-video' : 'bg-clip-audio',
+        isText ? 'bg-title-clip' : isVideo ? 'bg-clip-video' : 'bg-clip-audio',
         offline && 'bg-danger/40',
-        selected ? 'border-white' : isVideo ? 'border-clip-video-strong/60' : 'border-clip-audio-strong/60',
+        selected
+          ? 'border-white'
+          : isText
+            ? 'border-title-clip-strong/70'
+            : isVideo
+              ? 'border-clip-video-strong/60'
+              : 'border-clip-audio-strong/60',
         !clip.enabled && 'opacity-40',
         showDragOnLane || trimming
           ? 'z-30 opacity-90 shadow-popover'
           : razor
             ? 'cursor-inherit'
-            : 'cursor-grab',
+            : tool === 'text'
+              ? 'cursor-text'
+              : 'cursor-grab',
         showDragOnLane && !dragGhost && 'cursor-grabbing',
         track.locked && 'cursor-not-allowed',
         effectDrop.dropHint && 'ring-2 ring-accent/70',
@@ -137,6 +147,28 @@ export const ClipItem = memo(function ClipItem({
           className="h-full w-auto shrink-0 object-cover opacity-80"
         />
       ) : null}
+      {[...edgeTags.filter((tag) => tag.side === 'start'), ...edgeTags.filter((tag) => tag.side === 'end')].map(
+        (tag) => (
+          <div
+            key={tag.key}
+            className={cn(
+              'pointer-events-none absolute top-0 bottom-0 z-[14] flex items-center justify-center overflow-hidden border-white/30',
+              tag.side === 'start' ? 'left-0 border-r' : 'right-0 border-l',
+            )}
+            style={{
+              width: tag.widthPx,
+              backgroundColor: 'rgb(69 26 3 / 0.88)',
+              backgroundImage:
+                'repeating-linear-gradient(135deg, rgba(255,255,255,0.16) 0 2px, transparent 2px 6px)',
+            }}
+            title={tag.label}
+          >
+            {tag.widthPx >= 28 ? (
+              <span className="truncate px-0.5 text-[9px] font-medium leading-none text-amber-50">{tag.label}</span>
+            ) : null}
+          </div>
+        ),
+      )}
       {fxCount > 0 ? (
         <span
           className="absolute top-0.5 right-0.5 z-[15] rounded-xs bg-violet-950/90 px-1 py-px text-[9px] font-semibold leading-none text-violet-100 ring-1 ring-violet-300/30"

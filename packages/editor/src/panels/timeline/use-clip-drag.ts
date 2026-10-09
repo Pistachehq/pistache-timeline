@@ -120,6 +120,12 @@ export function useClipDrag(clip: Clip, track: Track, pixelsPerFrame: number) {
       return;
     }
 
+    if (ui.getState().tool === 'text') {
+      selection.getState().selectClips([clip.id]);
+      if (clip.text) ui.getState().setTextEditingClipId(clip.id);
+      return;
+    }
+
     if (isAdditive(event)) {
       selection.getState().selectClips([clip.id], 'toggle');
       return;

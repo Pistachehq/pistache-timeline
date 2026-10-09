@@ -6,6 +6,8 @@ import {
   type Clip,
   type ClipEdgeTransition,
   type ClipEffects,
+  getClipDuration,
+  maxTransitionFramesForClip,
   type Sequence,
   type VideoEffect,
 } from '@timeline/core';
@@ -81,6 +83,7 @@ function ActiveTransitionEditor({
   label,
   disabled,
   frameRate,
+  maxFrames,
   value,
   onChange,
   onRemove,
@@ -88,6 +91,7 @@ function ActiveTransitionEditor({
   readonly label: string;
   readonly disabled: boolean;
   readonly frameRate: FrameRate;
+  readonly maxFrames: number;
   readonly value: ClipEdgeTransition;
   readonly onChange: (next: ClipEdgeTransition) => void;
   readonly onRemove: () => void;
@@ -117,6 +121,7 @@ function ActiveTransitionEditor({
           label="Duration"
           frames={value.durationFrames}
           frameRate={frameRate}
+          maxFrames={maxFrames}
           disabled={disabled}
           onChange={(durationFrames) => onChange({ ...value, durationFrames })}
         />
@@ -371,6 +376,7 @@ export function ClipEffectsInspector({
   const setTransitions = (patch: { in?: ClipEdgeTransition | null; out?: ClipEdgeTransition | null }) => {
     edit.setClipTransitions(clip.id, patch, 'Change Transition');
   };
+  const transitionMax = maxTransitionFramesForClip(getClipDuration(clip));
 
   return (
     <>
@@ -380,6 +386,7 @@ export function ClipEffectsInspector({
             <ActiveTransitionEditor
               label="In"
               frameRate={frameRate}
+              maxFrames={transitionMax}
               disabled={locked}
               value={clip.transitions.in}
               onChange={(inEdge) => setTransitions({ in: inEdge })}
@@ -390,6 +397,7 @@ export function ClipEffectsInspector({
             <ActiveTransitionEditor
               label="Out"
               frameRate={frameRate}
+              maxFrames={transitionMax}
               disabled={locked}
               value={clip.transitions.out}
               onChange={(out) => setTransitions({ out })}

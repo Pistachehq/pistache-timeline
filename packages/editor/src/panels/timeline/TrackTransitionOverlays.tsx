@@ -63,7 +63,7 @@ export const TrackTransitionOverlays = memo(function TrackTransitionOverlays({
       {markers.map((marker) => (
         <div
           key={marker.key}
-          className="absolute top-1 bottom-1 flex"
+          className="absolute top-1 bottom-1 z-[16] flex"
           style={{ left: marker.leftPx, width: marker.widthPx }}
           data-testid="timeline-transition"
         >

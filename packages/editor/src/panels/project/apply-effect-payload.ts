@@ -8,6 +8,7 @@ import {
   type Project,
   type SequenceId,
   updateClipEffects,
+  updateClipText,
   updateClipTransitions,
 } from '@timeline/core';
 import { type EffectLibraryPayload } from '../dnd';
@@ -53,6 +54,15 @@ export function applyEffectPayloadToClip(
         video: [...clip.effects.video],
         audio: [...clip.effects.audio, payload.effect],
       });
+    case 'text-animation': {
+      if (!clip.text) return null;
+      const result = updateClipText(project, {
+        sequenceId,
+        clipId: clip.id,
+        text: { animation: payload.animation },
+      });
+      return result.ok ? result.value : null;
+    }
     default:
       return null;
   }
@@ -95,7 +105,26 @@ export function effectPayloadMatchesTrack(
       return trackKind === 'video';
     case 'audio-effect':
       return true;
+    case 'text-animation':
+      return trackKind === 'video';
     default:
       return false;
   }
+}
+
+/** Text transitions only land on text clips. Audio presets skip text clips. */
+export function effectPayloadMatchesClip(
+  payload: EffectLibraryPayload,
+  clip: Clip,
+  trackKind: 'video' | 'audio',
+): boolean {
+  if (payload.kind === 'text-animation') return clip.text !== null;
+  if (clip.text) {
+    if (payload.kind === 'audio-effect') return false;
+    if ((payload.kind === 'transition-in' || payload.kind === 'transition-out') && payload.affectsVideo === false) {
+      return false;
+    }
+    return trackKind === 'video';
+  }
+  return effectPayloadMatchesTrack(payload, trackKind);
 }

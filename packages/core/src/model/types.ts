@@ -120,7 +120,10 @@ export type {
 
 export interface Clip {
   readonly id: ClipId;
-  readonly assetId: MediaAssetId;
+  /** `null` for generated text clips, which are not media-bin assets. */
+  readonly assetId: MediaAssetId | null;
+  /** On-screen text. `null` for media clips. */
+  readonly text: import('./text').ClipText | null;
   readonly trackId: TrackId;
   readonly name: string;
   readonly enabled: boolean;

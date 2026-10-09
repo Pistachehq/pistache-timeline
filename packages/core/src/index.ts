@@ -14,6 +14,8 @@ export * from './operations/clip-effects';
 export * from './operations/clip-transitions-edit';
 export * from './operations/tracks';
 export * from './model/effects';
+export * from './model/text';
+export * from './render/text-animation';
 export * from './model/transition-resolve';
 export * from './render/clip-render';
 export * from './render/library-look';

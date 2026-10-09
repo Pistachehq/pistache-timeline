@@ -77,8 +77,10 @@ export function validateProjectInvariants(project: Project): string[] {
     for (const [clipId, clip] of Object.entries(sequence.clips)) {
       if (clip.id !== clipId) issues.push(`clip key ${clipId} does not match id ${clip.id}`);
       if (!owners.has(clip.id)) issues.push(`clip ${clipId} is not listed on any track`);
-      if (!project.mediaAssets[clip.assetId]) {
-        issues.push(`clip ${clipId} references missing media asset ${clip.assetId}`);
+      if (clip.text) {
+        if (clip.assetId) issues.push(`text clip ${clipId} should not reference a media asset`);
+      } else if (!clip.assetId || !project.mediaAssets[clip.assetId]) {
+        issues.push(`clip ${clipId} references missing media asset ${clip.assetId ?? 'none'}`);
       }
       if (!isNonNegativeInteger(clip.start)) issues.push(`clip ${clipId} has an invalid start`);
       if (!isNonNegativeInteger(clip.sourceIn) || !isNonNegativeInteger(clip.sourceOut)) {

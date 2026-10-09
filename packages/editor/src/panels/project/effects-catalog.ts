@@ -1,17 +1,21 @@
 import {
   type AudioFadeCurve,
   type AudioEffect,
+  TEXT_ANIMATION_IDS,
+  type TextAnimationId,
   type VideoEffect,
   type VideoTransitionKind,
 } from '@timeline/core';
 import { type EffectLibraryPayload } from '../dnd';
 import { PREMIERE_EFFECT_LIBRARY } from './premiere-library';
+import { TEXT_ANIMATION_LABELS } from './text-animation-label';
 
 export type EffectCategoryId =
   | 'video-transitions'
   | 'video-effects'
   | 'audio-transitions'
-  | 'audio-effects';
+  | 'audio-effects'
+  | 'text-transitions';
 
 export interface EffectCategory {
   readonly id: EffectCategoryId;
@@ -48,6 +52,11 @@ export const EFFECT_CATEGORIES: readonly EffectCategory[] = [
     id: 'audio-effects',
     name: 'Audio effects',
     description: 'Gain, EQ, compression, gate, and limiter.',
+  },
+  {
+    id: 'text-transitions',
+    name: 'Text transitions',
+    description: 'Type-on and reveal effects for text clips.',
   },
 ];
 
@@ -147,6 +156,16 @@ function audioFx(id: string, effect: AudioEffect, name: string): EffectLibraryEn
   };
 }
 
+const TEXT_TRANSITION_LIBRARY: readonly EffectLibraryEntry[] = TEXT_ANIMATION_IDS.filter(
+  (id): id is Exclude<TextAnimationId, 'none'> => id !== 'none',
+).map((animation) => ({
+  id: `text-${animation}`,
+  name: TEXT_ANIMATION_LABELS[animation],
+  categoryId: 'text-transitions' as const,
+  folderPath: 'text-transitions',
+  payload: { kind: 'text-animation' as const, animation },
+}));
+
 const CORE_EFFECT_LIBRARY: readonly EffectLibraryEntry[] = [
   transitionIn('fade', 'constant-power', 'Fade in'),
   transitionOut('fade', 'constant-power', 'Fade out'),
@@ -186,7 +205,11 @@ const CORE_EFFECT_LIBRARY: readonly EffectLibraryEntry[] = [
 ];
 
 /** Core presets plus Premiere-style catalog entries. */
-export const EFFECT_LIBRARY: readonly EffectLibraryEntry[] = [...CORE_EFFECT_LIBRARY, ...PREMIERE_EFFECT_LIBRARY];
+export const EFFECT_LIBRARY: readonly EffectLibraryEntry[] = [
+  ...CORE_EFFECT_LIBRARY,
+  ...TEXT_TRANSITION_LIBRARY,
+  ...PREMIERE_EFFECT_LIBRARY,
+];
 
 export function getEffectCategory(id: EffectCategoryId): EffectCategory | undefined {
   return EFFECT_CATEGORIES.find((c) => c.id === id);

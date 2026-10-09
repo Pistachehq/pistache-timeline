@@ -211,6 +211,18 @@ export const TrackLane = memo(function TrackLane({
 
         }
 
+        if (runtime.stores.ui.getState().tool === 'text') {
+          if (track.kind !== 'video') {
+            runtime.stores.ui.getState().notify('Text clips go on a video track.', 'warning');
+            return;
+          }
+          runtime.actions.edit.addTextClip({
+            trackId: track.id,
+            start: frameAtClientX(event.clientX, event.currentTarget),
+          });
+          clearSnapGuides();
+        }
+
       }}
 
       onDragOver={(event) => {

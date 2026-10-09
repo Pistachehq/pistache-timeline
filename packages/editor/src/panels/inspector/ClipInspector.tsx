@@ -17,6 +17,7 @@ import { useTimeDisplayFormat } from '../../hooks/use-format-display-time';
 import { useRuntime } from '../../runtime/context';
 import { useAsset } from '../../runtime/hooks';
 import { ClipCropInspector } from './ClipCropInspector';
+import { ClipTextInspector } from './ClipTextInspector';
 import { ClipEffectsInspector } from './ClipEffectsInspector';
 import { InfoRow, InspectorSection } from './InspectorSection';
 
@@ -89,7 +90,7 @@ export function ClipInspector({ clip, sequence }: { clip: Clip; sequence: Sequen
     <div data-testid="clip-inspector">
       <InspectorSection title="Clip" {...(locked ? { note: 'Track locked' } : {})}>
         <InfoRow label="Name" value={clip.name} testId="inspector-clip-name" />
-        <InfoRow label="Source" value={asset?.source.fileName ?? 'Missing'} />
+        <InfoRow label="Source" value={clip.text ? 'Text' : (asset?.source.fileName ?? 'Missing')} />
         <InfoRow label="Track" value={track?.name ?? '—'} />
         <InfoRow label="Start" value={<span className="font-mono">{t(clip.start)}</span>} testId="inspector-clip-start" />
         <InfoRow label="Duration" value={<span className="font-mono">{t(getClipDuration(clip))}</span>} />
@@ -102,6 +103,8 @@ export function ClipInspector({ clip, sequence }: { clip: Clip; sequence: Sequen
           }
         />
       </InspectorSection>
+
+      {clip.text ? <ClipTextInspector clip={clip} locked={locked} /> : null}
 
       {isVideo ? (
         <>

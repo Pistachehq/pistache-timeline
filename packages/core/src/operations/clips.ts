@@ -1,6 +1,8 @@
 import { clamp, isFiniteNumber, isNonNegativeInteger, ok, type Result, type TimelineError } from '@timeline/shared';
 import { AUDIO_LIMITS, TRANSFORM_LIMITS } from '../model/defaults';
 import { createClip } from '../model/factory';
+import { maxTransitionFramesForClip } from '../model/effects';
+import { DEFAULT_CLIP_TEXT, TEXT_CLIP_MAX_SOURCE_FRAMES, textClipName, type ClipText } from '../model/text';
 import {
   findTrack,
   getAssetFrameCount,
@@ -86,6 +88,86 @@ export function addClip(project: Project, input: AddClipInput): EditResult {
     const trackOnSeq = findTrack(seq, track.id)!;
     const updatedTrack: Track = { ...trackOnSeq, clipIds: sortClipIds([...trackOnSeq.clipIds, clip.id], clips) };
     return ok(replaceTrack({ ...seq, clips }, updatedTrack));
+  });
+}
+
+export interface AddTextClipInput {
+  readonly sequenceId: SequenceId;
+  readonly trackId: TrackId;
+  readonly start: number;
+  readonly durationFrames?: number;
+  readonly clipId?: ClipId;
+  readonly positionX?: number;
+  readonly positionY?: number;
+  readonly content?: string;
+}
+
+/** Places a generated text clip on a video track. It is not a media-bin asset. */
+export function addTextClip(project: Project, input: AddTextClipInput): EditResult {
+  return updateSequence(project, input.sequenceId, (sequence) => {
+    const track = findTrack(sequence, input.trackId);
+    if (!track) return fail('NOT_FOUND', `Track ${input.trackId} does not exist.`);
+    if (track.kind !== 'video') return fail('INVALID_ARGUMENT', 'Text clips belong on video tracks.');
+    if (track.locked) return fail('LOCKED', `Track ${track.name} is locked.`);
+    if (!isNonNegativeInteger(input.start)) return fail('INVALID_ARGUMENT', 'Clip start must be a whole, non-negative frame.');
+    if (input.clipId && sequence.clips[input.clipId]) return fail('CONFLICT', `Clip ${input.clipId} already exists.`);
+
+    const fps = sequence.frameRate.numerator / sequence.frameRate.denominator;
+    const duration = input.durationFrames ?? Math.max(1, Math.round(fps * 5));
+    if (!isNonNegativeInteger(duration) || duration < 1 || duration > TEXT_CLIP_MAX_SOURCE_FRAMES) {
+      return fail('INVALID_ARGUMENT', 'Text duration is invalid.');
+    }
+
+    const content = input.content ?? DEFAULT_CLIP_TEXT.content;
+    const text: ClipText = { ...DEFAULT_CLIP_TEXT, content };
+    let seq = sequence;
+    const range = { start: input.start, end: input.start + duration };
+    if (!isRangeFree(seq, track, input.start, duration)) {
+      seq = eraseRangeOnTrack(seq, track, range, null, splitClipForOverwrite);
+    }
+
+    const clip = createClip({
+      ...(input.clipId ? { id: input.clipId } : {}),
+      assetId: null,
+      text,
+      trackId: track.id,
+      name: textClipName(content),
+      start: input.start,
+      sourceIn: 0,
+      sourceOut: duration,
+    });
+    const placed = {
+      ...clip,
+      transform: {
+        ...clip.transform,
+        positionX: input.positionX ?? 0,
+        positionY: input.positionY ?? 0,
+      },
+    };
+    const clips = { ...seq.clips, [placed.id]: placed };
+    const trackOnSeq = findTrack(seq, track.id)!;
+    const updatedTrack: Track = { ...trackOnSeq, clipIds: sortClipIds([...trackOnSeq.clipIds, placed.id], clips) };
+    return ok(replaceTrack({ ...seq, clips }, updatedTrack));
+  });
+}
+
+export interface UpdateClipTextInput {
+  readonly sequenceId: SequenceId;
+  readonly clipId: ClipId;
+  readonly text: Partial<ClipText>;
+}
+
+export function updateClipText(project: Project, input: UpdateClipTextInput): EditResult {
+  return updateClip(project, input.sequenceId, input.clipId, (clip) => {
+    if (!clip.text) return clip;
+    const maxFrames = Math.max(1, maxTransitionFramesForClip(getClipDuration(clip)));
+    const requested = input.text.animationFrames ?? clip.text.animationFrames ?? DEFAULT_CLIP_TEXT.animationFrames;
+    const text: ClipText = {
+      ...clip.text,
+      ...input.text,
+      animationFrames: Math.round(Math.min(maxFrames, Math.max(1, requested))),
+    };
+    return { ...clip, text, name: textClipName(text.content) };
   });
 }
 
@@ -225,6 +307,7 @@ function splitClipInSequence(
     ...createClip({
       ...(newClipId ? { id: newClipId } : {}),
       assetId: clip.assetId,
+      text: clip.text,
       trackId: clip.trackId,
       name: clip.name,
       start: frame,
@@ -321,9 +404,9 @@ export function trimClip(project: Project, input: TrimClipInput): EditResult {
     const clip = sequence.clips[input.clipId];
     if (!clip) return fail('NOT_FOUND', `Clip ${input.clipId} does not exist.`);
 
-    const asset = project.mediaAssets[clip.assetId];
-    if (!asset) return fail('NOT_FOUND', 'Media for this clip is missing.');
-    const maxSourceOut = getMaxClipSourceOutFrames(asset, sequence);
+    const asset = clip.assetId ? project.mediaAssets[clip.assetId] : undefined;
+    if (!clip.text && !asset) return fail('NOT_FOUND', 'Media for this clip is missing.');
+    const maxSourceOut = clip.text ? TEXT_CLIP_MAX_SOURCE_FRAMES : getMaxClipSourceOutFrames(asset!, sequence);
 
     const first = trimClipInSequence(sequence, input.clipId, input.edge, input.frame, maxSourceOut);
     if (!first.ok) return first;
@@ -333,10 +416,12 @@ export function trimClip(project: Project, input: TrimClipInput): EditResult {
     if (partnerId) {
       const partner = next.clips[partnerId];
       if (partner && partner.start === clip.start && getClipEnd(partner) === getClipEnd(clip)) {
-        const partnerAsset = project.mediaAssets[partner.assetId];
-        const partnerMaxSourceOut = partnerAsset
-          ? getMaxClipSourceOutFrames(partnerAsset, sequence)
-          : maxSourceOut;
+        const partnerAsset = partner.assetId ? project.mediaAssets[partner.assetId] : undefined;
+        const partnerMaxSourceOut = partner.text
+          ? TEXT_CLIP_MAX_SOURCE_FRAMES
+          : partnerAsset
+            ? getMaxClipSourceOutFrames(partnerAsset, sequence)
+            : maxSourceOut;
         const second = trimClipInSequence(next, partnerId, input.edge, input.frame, partnerMaxSourceOut);
         if (!second.ok) return second;
         next = second.value;

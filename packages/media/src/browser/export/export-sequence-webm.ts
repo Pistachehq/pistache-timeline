@@ -87,7 +87,9 @@ async function pickVideoCodec(width: number, height: number, fps: number): Promi
 
 function uniqueVideoAssetIds(sequence: Sequence): MediaAssetId[] {
   const ids = new Set<MediaAssetId>();
-  for (const clip of Object.values(sequence.clips)) ids.add(clip.assetId);
+  for (const clip of Object.values(sequence.clips)) {
+    if (clip.assetId) ids.add(clip.assetId);
+  }
   return [...ids];
 }
 
@@ -220,6 +222,7 @@ export async function exportSequenceToWebm(
     const stack = getStackedVideoClipsAt(sequence, seqFrame);
     if (stack.length > 0) {
       for (const { clip } of stack) {
+        if (!clip.assetId) continue;
         const asset = request.project.mediaAssets[clip.assetId];
         if (!asset || asset.kind === 'image') continue;
         const video = videos.get(clip.assetId);

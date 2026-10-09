@@ -22,7 +22,8 @@ export type EffectLibraryPayload =
       readonly affectsVideo?: boolean;
     }
   | { readonly kind: 'video-effect'; readonly effect: import('@timeline/core').VideoEffect }
-  | { readonly kind: 'audio-effect'; readonly effect: import('@timeline/core').AudioEffect };
+  | { readonly kind: 'audio-effect'; readonly effect: import('@timeline/core').AudioEffect }
+  | { readonly kind: 'text-animation'; readonly animation: import('@timeline/core').TextAnimationId };
 
 export function writeEffectDragData(dataTransfer: DataTransfer, payload: EffectLibraryPayload): void {
   dataTransfer.setData(EFFECT_DRAG_TYPE, JSON.stringify(payload));

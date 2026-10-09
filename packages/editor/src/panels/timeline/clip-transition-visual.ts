@@ -1,14 +1,65 @@
 import {
   getClipEnd,
   isCrossDissolveTransition,
-  resolveTransitionRenderKind,
   type Clip,
   type ClipEdgeTransition,
   type Sequence,
   type Track,
   type VideoTransitionKind,
 } from '@timeline/core';
+import { textAnimationLabel } from '../project/text-animation-label';
 import { transitionDisplayName } from '../project/transition-display';
+
+export interface ClipEdgeTag {
+  readonly key: string;
+  /** Glued to the head or the tail of the clip. */
+  readonly side: 'start' | 'end';
+  readonly widthPx: number;
+  readonly label: string;
+}
+
+function tagWidth(frames: number, clipWidthPx: number, pixelsPerFrame: number): number {
+  return Math.min(clipWidthPx, Math.max(4, frames * pixelsPerFrame));
+}
+
+/** Head/tail labels drawn inside the clip so they stay flush with its edges. */
+export function clipEdgeTags(sequence: Sequence, track: Track, clip: Clip, clipWidthPx: number, pixelsPerFrame: number): ClipEdgeTag[] {
+  const tags: ClipEdgeTag[] = [];
+  const prev = prevClipOnTrack(sequence, track, clip);
+  const next = nextClipOnTrack(sequence, track, clip);
+  const trIn = clip.transitions.in;
+  const trOut = clip.transitions.out;
+  const pairedIn = prev && trIn && isCrossDissolvePair(prev, clip, prev.transitions.out, trIn);
+  const pairedOut = next && trOut && isCrossDissolvePair(clip, next, trOut, next.transitions.in);
+
+  if (!pairedIn && trIn && edgeDuration(trIn) > 0) {
+    tags.push({
+      key: `in-${clip.id}`,
+      side: 'start',
+      widthPx: tagWidth(edgeDuration(trIn), clipWidthPx, pixelsPerFrame),
+      label: transitionDisplayName(trIn),
+    });
+  }
+  if (!pairedOut && trOut && edgeDuration(trOut) > 0) {
+    tags.push({
+      key: `out-${clip.id}`,
+      side: 'end',
+      widthPx: tagWidth(edgeDuration(trOut), clipWidthPx, pixelsPerFrame),
+      label: transitionDisplayName(trOut),
+    });
+  }
+
+  const text = clip.text;
+  if (text && text.animation !== 'none' && (text.animationFrames ?? 0) > 0) {
+    tags.push({
+      key: `text-${clip.id}`,
+      side: 'start',
+      widthPx: tagWidth(text.animationFrames || 60, clipWidthPx, pixelsPerFrame),
+      label: textAnimationLabel(text.animation),
+    });
+  }
+  return tags;
+}
 
 export interface TransitionMarker {
   readonly key: string;
@@ -96,15 +147,9 @@ export function collectTransitionMarkers(
   const pairedKeys = new Set<string>();
 
   for (const clip of clips) {
-    const prev = prevClipOnTrack(sequence, track, clip);
     const next = nextClipOnTrack(sequence, track, clip);
-    const trIn = clip.transitions.in;
     const trOut = clip.transitions.out;
-
-    const pairedIn =
-      prev && trIn && isCrossDissolvePair(prev, clip, prev.transitions.out, trIn);
-    const pairedOut =
-      next && trOut && isCrossDissolvePair(clip, next, trOut, next.transitions.in);
+    const pairedOut = next && trOut && isCrossDissolvePair(clip, next, trOut, next.transitions.in);
 
     if (pairedOut && trOut && next) {
       const pairKey = `${clip.id}:${next.id}`;
@@ -124,32 +169,6 @@ export function collectTransitionMarkers(
           paired: true,
         });
       }
-    } else if (trOut && edgeDuration(trOut) > 0) {
-      const duration = edgeDuration(trOut);
-      const widthPx = Math.max(4, duration * pixelsPerFrame);
-      const clipEnd = getClipEnd(clip);
-      const { leftPx, widthPx: w } = clampMarkerGeometry(clipEnd * pixelsPerFrame - widthPx, widthPx);
-      markers.push({
-        key: `out-${clip.id}`,
-        leftPx,
-        widthPx: w,
-        label: transitionDisplayName(trOut),
-        kind: resolveTransitionRenderKind(trOut),
-        paired: false,
-      });
-    }
-
-    if (!pairedIn && trIn && edgeDuration(trIn) > 0) {
-      const duration = edgeDuration(trIn);
-      const widthPx = Math.max(4, duration * pixelsPerFrame);
-      markers.push({
-        key: `in-${clip.id}`,
-        leftPx: clip.start * pixelsPerFrame,
-        widthPx,
-        label: transitionDisplayName(trIn),
-        kind: resolveTransitionRenderKind(trIn),
-        paired: false,
-      });
     }
   }
 

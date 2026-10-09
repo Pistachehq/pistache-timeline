@@ -101,8 +101,11 @@ export class SequencePlaybackController {
 
     this.#videoClip = activeVideo;
 
-    if (activeVideo) {
-      const entry = media.getState().entries[activeVideo.clip.assetId];
+    if (activeVideo?.clip.text) {
+      playback.getState().setProgram(activeVideo.clip.id, 'ready');
+    } else if (activeVideo) {
+      const assetId = activeVideo.clip.assetId;
+      const entry = assetId ? media.getState().entries[assetId] : undefined;
       if (entry?.status !== 'online' || !entry.handle) {
         playback.getState().setProgram(activeVideo.clip.id, entry?.status === 'resolving' ? 'loading' : 'offline');
       } else {
