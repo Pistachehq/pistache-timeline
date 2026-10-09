@@ -15,8 +15,8 @@ import {
 import { IconButton, NumberField } from '@timeline/ui';
 import { Link2, RotateCcw, Unlink2, Volume2, VolumeX } from 'lucide-react';
 import { useTimeDisplayFormat } from '../../hooks/use-format-display-time';
-import { usePlaybackState, useRuntime } from '../../runtime/context';
-import { useAsset } from '../../runtime/hooks';
+import { useRuntime } from '../../runtime/context';
+import { useAsset, useEditPlayhead } from '../../runtime/hooks';
 import { ClipCropInspector } from './ClipCropInspector';
 import { ClipTextInspector } from './ClipTextInspector';
 import { ClipEffectsInspector } from './ClipEffectsInspector';
@@ -55,7 +55,7 @@ const LABELS: Record<keyof ClipTransform, string> = {
 
 export function ClipInspector({ clip, sequence }: { clip: Clip; sequence: Sequence }) {
   const runtime = useRuntime();
-  const playhead = usePlaybackState((state) => state.playhead);
+  const playhead = useEditPlayhead();
   const motion = evaluateClipTransform(clip, playhead);
   const { edit } = runtime.actions;
   const asset = useAsset(clip.assetId);

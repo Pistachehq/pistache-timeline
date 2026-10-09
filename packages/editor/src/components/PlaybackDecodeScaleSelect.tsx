@@ -3,10 +3,10 @@ import { useRuntime, useUiState } from '../runtime/context';
 import { type PlaybackDecodeScale } from '../state/ui-store';
 
 const OPTIONS: readonly { value: PlaybackDecodeScale; label: string }[] = [
-  { value: '1', label: 'Playback 1:1' },
-  { value: '0.5', label: 'Playback ½' },
-  { value: '0.25', label: 'Playback ¼' },
-  { value: '0.125', label: 'Playback ⅛' },
+  { value: '1', label: 'Full' },
+  { value: '0.5', label: 'Half' },
+  { value: '0.25', label: 'Quarter' },
+  { value: '0.125', label: 'Eighth' },
 ];
 
 export function PlaybackDecodeScaleSelect({ className }: { className?: string }) {
@@ -15,7 +15,7 @@ export function PlaybackDecodeScaleSelect({ className }: { className?: string })
   return (
     <Select
       className={className}
-      label="Playback decode scale"
+      label="Preview quality"
       value={scale}
       options={OPTIONS}
       onValueChange={(value) => runtime.stores.ui.getState().setPlaybackDecodeScale(value)}

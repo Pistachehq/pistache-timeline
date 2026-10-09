@@ -269,8 +269,12 @@ export function createUiStore(): UiStore {
     setClipTrim: (clipTrim) => set({ clipTrim }),
     setMarquee: (marquee) => set({ marquee }),
     setAssetDrag: (assetDrag) => set({ assetDrag }),
-    setPlaybackMeter: (playbackMeterClipId, playbackMeterPeak) =>
-      set({ playbackMeterClipId, playbackMeterPeak: Math.max(0, Math.min(1, playbackMeterPeak)) }),
+    setPlaybackMeter: (playbackMeterClipId, playbackMeterPeak) => {
+      const peak = Math.max(0, Math.min(1, playbackMeterPeak));
+      const state = get();
+      if (state.playbackMeterClipId === playbackMeterClipId && state.playbackMeterPeak === peak) return;
+      set({ playbackMeterClipId, playbackMeterPeak: peak });
+    },
     setMediaBinOpenFolderId: (mediaBinOpenFolderId) => set({ mediaBinOpenFolderId }),
     setProjectBinTab: (projectBinTab) => set({ projectBinTab }),
     setEffectsBinOpenCategoryId: (effectsBinOpenCategoryId) =>

@@ -4,12 +4,16 @@ import {
   cssFilterFromVideoEffects,
   effectiveClipOpacityPercent,
   evaluateClipTransform,
+  getClipAtFrame,
+  getClipEnd,
+  getStackedVideoClipsAt,
   libraryEffectClipPath,
   libraryEffectTransform,
   type ActiveVideoClip,
   type Clip,
   type ClipId,
   type Sequence,
+  type VideoTrack,
 } from '@timeline/core';
 import { type CSSProperties } from 'react';
 
@@ -85,4 +89,117 @@ export function programClipWrapperStyle(
     ...(filter ? { filter } : {}),
     ...(clipPath ? { clipPath, overflow: 'hidden' as const } : {}),
   };
+}
+
+/** Writes the program-layer presentation for the current sequence frame. */
+export function applyProgramClipStyle(
+  el: HTMLElement,
+  clip: Clip,
+  sequence: Sequence,
+  sequenceFrame: number,
+  frameWidth: number,
+  frameHeight: number,
+  boxWidth: number,
+  boxHeight: number,
+  hidden: boolean,
+): void {
+  const style = programClipWrapperStyle(clip, sequence, sequenceFrame, frameWidth, frameHeight, boxWidth, boxHeight);
+  el.style.left = '50%';
+  el.style.top = '50%';
+  el.style.width = `${boxWidth}px`;
+  el.style.height = `${boxHeight}px`;
+  el.style.transform = typeof style.transform === 'string' ? style.transform : '';
+  el.style.transformOrigin = 'center center';
+  el.style.opacity = hidden ? '0' : String(style.opacity ?? 1);
+  el.style.mixBlendMode = typeof style.mixBlendMode === 'string' ? style.mixBlendMode : 'normal';
+  el.style.filter = typeof style.filter === 'string' ? style.filter : '';
+  el.style.clipPath = typeof style.clipPath === 'string' ? style.clipPath : '';
+  el.style.overflow = style.overflow === 'hidden' ? 'hidden' : '';
+}
+
+export type ProgramLayerRole = 'active' | 'warm' | 'recent';
+
+export interface ProgramPictureLayer extends ActiveVideoClip {
+  readonly role: ProgramLayerRole;
+}
+
+function isMediaClip(clip: Clip | undefined): clip is Clip {
+  return !!clip && clip.enabled && !clip.text && clip.assetId !== null;
+}
+
+function nextMediaClip(sequence: Sequence, track: VideoTrack, frame: number): Clip | undefined {
+  let next: Clip | undefined;
+  for (const id of track.clipIds) {
+    const clip = sequence.clips[id];
+    if (!isMediaClip(clip) || clip.start <= frame) continue;
+    if (!next || clip.start < next.start) next = clip;
+  }
+  return next;
+}
+
+function previousMediaClip(sequence: Sequence, track: VideoTrack, frame: number): Clip | undefined {
+  let prev: Clip | undefined;
+  for (const id of track.clipIds) {
+    const clip = sequence.clips[id];
+    if (!isMediaClip(clip) || getClipEnd(clip) > frame) continue;
+    if (!prev || clip.start > prev.start) prev = clip;
+  }
+  return prev;
+}
+
+/**
+ * Clips to keep mounted in Program: the current stack, the next media clip
+ * (already seeked to its first frame), and the clip that just ended.
+ * Keeping those elements alive avoids a black frame at the cut.
+ */
+export function programPictureLayers(sequence: Sequence, frame: number): ProgramPictureLayer[] {
+  const active = getStackedVideoClipsAt(sequence, frame);
+  const seen = new Set(active.map((item) => item.clip.id));
+  const extras: ProgramPictureLayer[] = [];
+  const fps = sequence.frameRate.numerator / Math.max(1, sequence.frameRate.denominator);
+  const horizon = Math.max(1, Math.round(fps * 2));
+
+  for (const track of sequence.videoTracks) {
+    if (!track.enabled || !track.visible) continue;
+    const current = getClipAtFrame(sequence, track, frame);
+    const next = nextMediaClip(sequence, track, frame);
+    if (next && !seen.has(next.id) && (current || next.start - frame <= horizon)) {
+      seen.add(next.id);
+      extras.push({ clip: next, track, role: 'warm' });
+      if (getClipEnd(next) - next.start <= horizon) {
+        const after = nextMediaClip(sequence, track, next.start);
+        if (after && !seen.has(after.id)) {
+          seen.add(after.id);
+          extras.push({ clip: after, track, role: 'warm' });
+        }
+      }
+    }
+    const prev = previousMediaClip(sequence, track, frame);
+    if (prev && !seen.has(prev.id) && current && !current.text) {
+      seen.add(prev.id);
+      extras.push({ clip: prev, track, role: 'recent' });
+    }
+  }
+
+  return [
+    ...extras.filter((item) => item.role === 'recent'),
+    ...extras.filter((item) => item.role === 'warm'),
+    ...active.map((item) => ({ ...item, role: 'active' as const })),
+  ];
+}
+
+export function programPictureKey(sequence: Sequence, frame: number): string {
+  return programPictureLayers(sequence, frame)
+    .map((item) => `${item.role}:${item.clip.id}`)
+    .join('|');
+}
+
+/** Whether this mounted layer should be visible at `playhead`, including the frame a cut lands. */
+export function programLayerLive(layer: ProgramPictureLayer, playhead: number): boolean {
+  const { clip } = layer;
+  const inside = playhead >= clip.start && playhead < getClipEnd(clip);
+  if (inside) return true;
+  if (layer.role !== 'active') return false;
+  const fade = clip.transitions.in?.durationFrames ?? 0;
+  return fade > 0 && playhead >= clip.start - fade && playhead < clip.start;
 }

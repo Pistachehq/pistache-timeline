@@ -16,8 +16,8 @@ import { NumberField, Select } from '@timeline/ui';
 import { ChevronLeft, ChevronRight, ChevronRight as Twirl, RotateCcw, Timer } from 'lucide-react';
 import { type PointerEvent as ReactPointerEvent, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useFormatDisplayTime } from '../../hooks/use-format-display-time';
-import { usePlaybackState, useRuntime } from '../../runtime/context';
-import { useActiveSequence, useAsset, useSingleSelectedClip } from '../../runtime/hooks';
+import { useRuntime } from '../../runtime/context';
+import { useActiveSequence, useAsset, useEditPlayhead, useSingleSelectedClip } from '../../runtime/hooks';
 import { textAnimationLabel } from '../project/text-animation-label';
 import { clientMarqueeBox, elementBounds, rectsIntersect } from '../marquee-geometry';
 import { playheadStepFromWheel } from '../timeline/timeline-wheel-playhead';
@@ -237,7 +237,7 @@ function EffectControlsChrome({
   const syncing = useRef(false);
   const scrubbing = useRef(false);
   const runtime = useRuntime();
-  const playhead = usePlaybackState((state) => state.playhead);
+  const playhead = useEditPlayhead();
   const formatTime = useFormatDisplayTime();
   const asset = useAsset(clip?.assetId);
   const { edit } = runtime.actions;
@@ -279,8 +279,13 @@ function EffectControlsChrome({
     const width = Math.max(1, el.clientWidth * zoom);
     const track = rulerRef.current?.firstElementChild;
     if (track instanceof HTMLElement) track.style.width = `${width}px`;
-    const x = (local / span) * width - el.scrollLeft;
+    const playheadNow = clip ? runtime.stores.playback.getState().playhead : 0;
+    const localNow = clip ? clampLocalFrame(clip, playheadNow - clip.start) : 0;
+    const outsideNow = clip ? playheadNow < clip.start || playheadNow >= clip.start + duration : true;
+    const x = (localNow / span) * width - el.scrollLeft;
     line.style.transform = `translateX(${x}px)`;
+    line.classList.toggle('bg-playhead', !outsideNow);
+    line.classList.toggle('bg-fg-subtle/50', outsideNow);
   };
 
   const syncFromLeft = () => {
@@ -531,11 +536,15 @@ function EffectControlsChrome({
 
   useLayoutEffect(() => {
     placePlayhead();
+    const unsub = runtime.stores.playback.subscribe(() => placePlayhead());
     const el = rightRef.current;
-    if (!el) return;
+    if (!el) return () => unsub();
     const observer = new ResizeObserver(() => placePlayhead());
     observer.observe(el);
-    return () => observer.disconnect();
+    return () => {
+      unsub();
+      observer.disconnect();
+    };
   });
 
   const marks = [0, 0.25, 0.5, 0.75, 1];

@@ -1,14 +1,13 @@
 import { textAnimationFrame, textAnimationProgress, type Clip, type Sequence } from '@timeline/core';
 import { cn } from '@timeline/ui';
 import { useEffect, useRef } from 'react';
-import { useRuntime, useUiState } from '../../runtime/context';
+import { usePlaybackState, useRuntime, useUiState } from '../../runtime/context';
 import { ensureCatalogFont, ensureCustomFont } from '../inspector/text-fonts';
 import { programClipWrapperStyle } from './program-clip-layout';
 
 interface ProgramTextLayerProps {
   readonly clip: Clip;
   readonly sequence: Sequence;
-  readonly playhead: number;
   readonly stackIndex: number;
   readonly frameWidth: number;
   readonly frameHeight: number;
@@ -18,13 +17,13 @@ interface ProgramTextLayerProps {
 export function ProgramTextLayer({
   clip,
   sequence,
-  playhead,
   stackIndex,
   frameWidth,
   frameHeight,
   selected,
 }: ProgramTextLayerProps) {
   const text = clip.text;
+  const playhead = usePlaybackState((state) => state.playhead);
   const runtime = useRuntime();
   const editing = useUiState((s) => s.textEditingClipId === clip.id);
   const editorRef = useRef<HTMLDivElement>(null);
@@ -100,6 +99,7 @@ export function ProgramTextLayer({
   return (
     <div
       data-program-layer={clip.id}
+      data-program-text=""
       className={cn('absolute', text.align !== 'justify' && 'max-w-[80%]', selected && 'ring-1 ring-pink-200/70')}
       style={{
         ...box,
