@@ -8,7 +8,9 @@ import { useActiveSequence, useAsset } from '../../runtime/hooks';
 import { ClipWaveform, clipWaveformGainLinear } from './ClipWaveform';
 import { AUDIO_TRACK_HEIGHT, MIN_LABEL_WIDTH } from './layout';
 import { useClipDrag } from './use-clip-drag';
+import { useClipEffectDrop } from './use-clip-effect-drop';
 import { useClipTrim } from './use-clip-trim';
+import { clipEffectCount } from './clip-transition-visual';
 
 interface ClipItemProps {
   clip: Clip;
@@ -38,6 +40,7 @@ export const ClipItem = memo(function ClipItem({
   const sequence = useActiveSequence();
   const tool = useUiState((s) => s.tool);
   const handlers = useClipDrag(clip, track, pixelsPerFrame);
+  const effectDrop = useClipEffectDrop(clip, track);
   const trim = useClipTrim(clip, track, pixelsPerFrame);
   const formatTime = useFormatDisplayTime();
 
@@ -59,6 +62,7 @@ export const ClipItem = memo(function ClipItem({
 
   const crossTrackGhost = dragGhost && drag !== null;
   const showDragOnLane = crossTrackGhost || (drag !== null && drag.trackId === track.id);
+  const fxCount = clipEffectCount(clip);
 
   return (
     <div
@@ -82,6 +86,7 @@ export const ClipItem = memo(function ClipItem({
             : 'cursor-grab',
         showDragOnLane && !dragGhost && 'cursor-grabbing',
         track.locked && 'cursor-not-allowed',
+        effectDrop.dropHint && 'ring-2 ring-accent/70',
       )}
       style={{
         left: start * pixelsPerFrame,
@@ -89,6 +94,9 @@ export const ClipItem = memo(function ClipItem({
         transform: drag && !dragGhost && drag.trackId === track.id ? `translateY(${drag.offsetY}px)` : undefined,
       }}
       {...(activeTrim || dragGhost ? {} : handlers)}
+      onDragOver={effectDrop.onDragOver}
+      onDragLeave={effectDrop.onDragLeave}
+      onDrop={effectDrop.onDrop}
     >
       {tool === 'select' && !track.locked && !drag && !razor && (!trimming || isTrimPrimary) ? (
         <>
@@ -128,6 +136,14 @@ export const ClipItem = memo(function ClipItem({
           draggable={false}
           className="h-full w-auto shrink-0 object-cover opacity-80"
         />
+      ) : null}
+      {fxCount > 0 ? (
+        <span
+          className="absolute top-0.5 right-0.5 z-[15] rounded-xs bg-violet-950/90 px-1 py-px text-[9px] font-semibold leading-none text-violet-100 ring-1 ring-violet-300/30"
+          title={`${fxCount} effect${fxCount === 1 ? '' : 's'}`}
+        >
+          fx
+        </span>
       ) : null}
       {width >= MIN_LABEL_WIDTH ? (
         <span className="relative z-10 flex min-w-0 items-start gap-1 px-1.5 py-0.5">

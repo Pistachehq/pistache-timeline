@@ -1,4 +1,6 @@
 import {
+  audioEffectGainDb,
+  clipTransitionAudioMultiplier,
   combinedClipTrackLinearGain,
   effectiveClipLinearGain,
   findTrack,
@@ -22,12 +24,14 @@ interface AudioLane {
   readonly panner: StereoPannerNode;
 }
 
-function laneGain(sequence: Sequence, clip: Clip): { linear: number; pan: number } {
+function laneGain(sequence: Sequence, clip: Clip, frame: number): { linear: number; pan: number } {
   const track = findTrack(sequence, clip.trackId);
-  const linear =
+  let linear =
     track?.kind === 'audio'
       ? combinedClipTrackLinearGain(clip.audio, track.volume, track.muted)
       : effectiveClipLinearGain(clip);
+  linear *= clipTransitionAudioMultiplier(clip, frame);
+  linear *= 10 ** (audioEffectGainDb(clip.effects) / 20);
   return { linear, pan: clip.audio.pan };
 }
 
@@ -128,7 +132,7 @@ export class ProgramAudioMixer {
         lane.element.load();
       }
 
-      const { linear, pan } = laneGain(sequence, clip);
+      const { linear, pan } = laneGain(sequence, clip, frame);
       lane.gain.gain.value = Math.max(0, linear);
       lane.panner.pan.value = Math.max(-1, Math.min(1, pan / 100));
 

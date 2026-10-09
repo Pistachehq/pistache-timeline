@@ -1,4 +1,12 @@
-import { type ActiveVideoClip, type Clip, type ClipId, type Sequence } from '@timeline/core';
+import {
+  clipPathFromVideoEffects,
+  cssFilterFromVideoEffects,
+  effectiveClipOpacityPercent,
+  type ActiveVideoClip,
+  type Clip,
+  type ClipId,
+  type Sequence,
+} from '@timeline/core';
 import { type CSSProperties } from 'react';
 
 export function programLayerElement(frame: HTMLElement, clipId: ClipId): HTMLElement | null {
@@ -42,6 +50,7 @@ export function letterboxMediaSize(
 export function programClipWrapperStyle(
   clip: Clip,
   sequence: Sequence,
+  sequenceFrame: number,
   frameWidth: number,
   frameHeight: number,
   boxWidth: number,
@@ -51,6 +60,8 @@ export function programClipWrapperStyle(
   const seq = sequence.resolution;
   const px = frameWidth > 0 ? (t.positionX / seq.width) * frameWidth : 0;
   const py = frameHeight > 0 ? (t.positionY / seq.height) * frameHeight : 0;
+  const filter = cssFilterFromVideoEffects(clip.effects.video);
+  const clipPath = clipPathFromVideoEffects(clip.effects.video);
   return {
     left: '50%',
     top: '50%',
@@ -58,6 +69,8 @@ export function programClipWrapperStyle(
     height: boxHeight,
     transform: `translate(-50%, -50%) translate(${px}px, ${py}px) rotate(${t.rotation}deg) scale(${t.scaleX / 100}, ${t.scaleY / 100})`,
     transformOrigin: 'center center',
-    opacity: t.opacity / 100,
+    opacity: effectiveClipOpacityPercent(clip, sequenceFrame, sequence) / 100,
+    ...(filter ? { filter } : {}),
+    ...(clipPath ? { clipPath, overflow: 'hidden' as const } : {}),
   };
 }

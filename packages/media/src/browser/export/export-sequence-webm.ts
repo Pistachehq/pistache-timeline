@@ -227,7 +227,7 @@ export async function exportSequenceToWebm(
         const seconds = sourceTimeForFrame(clip, seqFrame, sequence.frameRate);
         await seekVideoForExport(video, seconds, signal);
       }
-      drawStackedProgramFrame(ctx, drawOptions, stack, request.project.mediaAssets, videos, images);
+      drawStackedProgramFrame(ctx, drawOptions, stack, request.project.mediaAssets, videos, images, seqFrame);
     } else {
       drawGapFrame(ctx, width, height);
     }

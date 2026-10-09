@@ -21,6 +21,7 @@ import {
   useUiState,
 } from '../../runtime/context';
 import { hitTestProgramClipAt, letterboxMediaSize, programClipWrapperStyle } from './program-clip-layout';
+import { ProgramCropOverlay } from './ProgramCropOverlay';
 import { ProgramTransformOverlay } from './ProgramTransformOverlay';
 
 const LAYER_Z = 10;
@@ -63,6 +64,7 @@ function syncStackVideos(
 interface LayerProps {
   readonly clip: Clip;
   readonly sequence: Sequence;
+  readonly playhead: number;
   readonly stackIndex: number;
   readonly frameWidth: number;
   readonly frameHeight: number;
@@ -73,6 +75,7 @@ interface LayerProps {
 function CompositeLayer({
   clip,
   sequence,
+  playhead,
   stackIndex,
   frameWidth,
   frameHeight,
@@ -121,7 +124,7 @@ function CompositeLayer({
   if (!asset || !url || box.width <= 0 || box.height <= 0) return null;
 
   const wrapperStyle = {
-    ...programClipWrapperStyle(clip, sequence, frameWidth, frameHeight, box.width, box.height),
+    ...programClipWrapperStyle(clip, sequence, playhead, frameWidth, frameHeight, box.width, box.height),
     zIndex: (stackIndex + 1) * LAYER_Z,
   };
 
@@ -162,6 +165,12 @@ export function ProgramCompositeLayers({ sequence }: { readonly sequence: Sequen
   const decodeFactor = playbackDecodeFactor(useUiState((s) => s.playbackDecodeScale));
   const selectedIds = useSelectionState((s) => s.clipIds);
   const selectedId = selectedIds.length === 1 ? selectedIds[0] : null;
+  const cropEditId = useUiState((s) => s.clipCropEditId);
+  const setCropEditId = runtime.stores.ui.getState().setClipCropEditId;
+
+  useEffect(() => {
+    if (cropEditId && selectedId !== cropEditId) setCropEditId(null);
+  }, [cropEditId, selectedId, setCropEditId]);
   const stack = useMemo(() => getStackedVideoClipsAt(sequence, playhead), [sequence, playhead]);
   const mediaAssets = useProjectState((s) => s.project.mediaAssets);
 
@@ -284,6 +293,7 @@ export function ProgramCompositeLayers({ sequence }: { readonly sequence: Sequen
           key={clip.id}
           clip={clip}
           sequence={sequence}
+          playhead={playhead}
           stackIndex={index}
           frameWidth={frameWidth}
           frameHeight={frameHeight}
@@ -291,7 +301,16 @@ export function ProgramCompositeLayers({ sequence }: { readonly sequence: Sequen
           registerVideo={registerVideo}
         />
       ))}
-      {selectedId && selectedStackIndex >= 0 ? (
+      {cropEditId ? (
+        <ProgramCropOverlay
+          sequence={sequence}
+          frameRef={containerRef}
+          playhead={playhead}
+          clipId={cropEditId}
+          zIndex={(selectedStackIndex + 1) * LAYER_Z + 20}
+        />
+      ) : null}
+      {selectedId && selectedStackIndex >= 0 && !cropEditId ? (
         <ProgramTransformOverlay
           sequence={sequence}
           frameRef={containerRef}

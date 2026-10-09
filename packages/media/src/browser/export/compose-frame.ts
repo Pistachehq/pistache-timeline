@@ -1,4 +1,11 @@
-import { type ActiveVideoClip, type Clip, type MediaAsset, type Sequence } from '@timeline/core';
+import {
+  canvasFilterFromVideoEffects,
+  effectiveClipOpacityPercent,
+  type ActiveVideoClip,
+  type Clip,
+  type MediaAsset,
+  type Sequence,
+} from '@timeline/core';
 
 /** Clears the canvas to black (sequence gap or empty frame). */
 export function drawGapFrame(ctx: CanvasRenderingContext2D, width: number, height: number): void {
@@ -60,6 +67,7 @@ export function drawStackedProgramFrame(
   assets: Readonly<Record<MediaAsset['id'], MediaAsset>>,
   videos: ReadonlyMap<MediaAsset['id'], HTMLVideoElement>,
   images: ReadonlyMap<MediaAsset['id'], HTMLImageElement>,
+  sequenceFrame: number,
 ): void {
   const { width, height } = options;
   drawGapFrame(ctx, width, height);
@@ -76,15 +84,18 @@ export function drawStackedProgramFrame(
     const scaleX = width / sequence.resolution.width;
     const scaleY = height / sequence.resolution.height;
     const t = clip.transform;
+    const filter = canvasFilterFromVideoEffects(clip.effects.video);
     ctx.save();
     ctx.translate(width / 2 + t.positionX * scaleX, height / 2 + t.positionY * scaleY);
     ctx.rotate((t.rotation * Math.PI) / 180);
     ctx.scale(t.scaleX / 100, t.scaleY / 100);
-    ctx.globalAlpha = t.opacity / 100;
+    ctx.globalAlpha = effectiveClipOpacityPercent(clip, sequenceFrame, sequence) / 100;
+    if (filter) ctx.filter = filter;
     const fit = Math.min(width / vw, height / vh);
     const dw = vw * fit;
     const dh = vh * fit;
     ctx.drawImage(source, -dw / 2, -dh / 2, dw, dh);
     ctx.restore();
+    ctx.filter = 'none';
   }
 }

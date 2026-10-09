@@ -1,5 +1,8 @@
 import { FrameRates, type FrameRate } from '../time/rational';
+import { DEFAULT_CLIP_EFFECTS, DEFAULT_CLIP_TRANSITIONS } from './effects';
 import { type ClipAudio, type ClipTransform, type Resolution } from './types';
+
+export { DEFAULT_CLIP_EFFECTS, DEFAULT_CLIP_TRANSITIONS };
 
 /** Version of the persisted project schema produced by this build. */
 export const CURRENT_SCHEMA_VERSION = 1;

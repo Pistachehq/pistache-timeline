@@ -1,4 +1,11 @@
-import { type Clip, type FrameRate, framesToSeconds, getClipEnd, secondsToFrames } from '@timeline/core';
+import {
+  sequenceFrameForClipMedia,
+  type Clip,
+  type FrameRate,
+  framesToSeconds,
+  getClipEnd,
+  secondsToFrames,
+} from '@timeline/core';
 
 /**
  * Media time to seek to for a sequence frame inside `clip`. Targets the
@@ -6,7 +13,8 @@ import { type Clip, type FrameRate, framesToSeconds, getClipEnd, secondsToFrames
  * timestamp rounding.
  */
 export function sourceTimeForFrame(clip: Clip, frame: number, rate: FrameRate): number {
-  const sourceFrame = clip.sourceIn + (frame - clip.start);
+  const seqFrame = sequenceFrameForClipMedia(clip, frame);
+  const sourceFrame = clip.sourceIn + (seqFrame - clip.start);
   return framesToSeconds(sourceFrame + 0.5, rate);
 }
 

@@ -230,6 +230,8 @@ function splitClipInSequence(
     enabled: clip.enabled,
     transform: clip.transform,
     audio: clip.audio,
+    transitions: clip.transitions,
+    effects: clip.effects,
   };
   if (sequence.clips[right.id]) return fail('CONFLICT', `Clip ${right.id} already exists.`);
   const clips = { ...sequence.clips, [left.id]: left, [right.id]: right };

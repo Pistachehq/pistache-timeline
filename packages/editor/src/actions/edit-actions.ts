@@ -27,11 +27,18 @@ import {
   type TrackChanges,
   type TrackId,
   type TrackKind,
+  mergeClipTransitions,
   updateClipAudio,
+  updateClipEffects,
   updateClipTransform,
+  updateClipTransitions,
   updateTrack,
+  type ClipEffects,
+  type ClipTransitions,
 } from '@timeline/core';
 import { ok, type Result, type TimelineError } from '@timeline/shared';
+import { type EffectLibraryPayload } from '../panels/dnd';
+import { applyEffectPayloadToClip } from '../panels/project/apply-effect-payload';
 import { type AutoCreateTrackKind } from '../state/ui-store';
 import { currentSequence, type EditorServices } from '../runtime/services';
 
@@ -430,6 +437,31 @@ export function createEditActions(services: EditorServices) {
 
     setClipAudio(clipId: ClipId, audio: Partial<ClipAudio>, label = 'Change Audio'): boolean {
       return run(label, (project, sequence) => updateClipAudio(project, { sequenceId: sequence.id, clipId, audio }));
+    },
+
+    setClipTransitions(clipId: ClipId, patch: Partial<ClipTransitions>, label = 'Change Transition'): boolean {
+      return run(label, (project, sequence) => {
+        const clip = sequence.clips[clipId];
+        if (!clip) return ok(project);
+        return updateClipTransitions(project, {
+          sequenceId: sequence.id,
+          clipId,
+          transitions: mergeClipTransitions(clip.transitions, patch),
+        });
+      });
+    },
+
+    setClipEffects(clipId: ClipId, effects: ClipEffects, label = 'Change Effects'): boolean {
+      return run(label, (project, sequence) =>
+        updateClipEffects(project, { sequenceId: sequence.id, clipId, effects }),
+      );
+    },
+
+    applyEffectLibraryPayload(clipId: ClipId, payload: EffectLibraryPayload, label = 'Apply Effect'): boolean {
+      return run(label, (project, sequence) => {
+        const next = applyEffectPayloadToClip(project, sequence.id, clipId, payload);
+        return next ? ok(next) : ok(project);
+      });
     },
 
     toggleSelectedClipsEnabled(): boolean {

@@ -106,6 +106,18 @@ export interface ClipAudio {
   readonly pan: number;
 }
 
+export type {
+  AudioEffect,
+  AudioEffectKind,
+  AudioFadeCurve,
+  ClipEdgeTransition,
+  ClipEffects,
+  ClipTransitions,
+  VideoEffect,
+  VideoEffectKind,
+  VideoTransitionKind,
+} from './effects';
+
 export interface Clip {
   readonly id: ClipId;
   readonly assetId: MediaAssetId;
@@ -120,6 +132,8 @@ export interface Clip {
   readonly sourceOut: number;
   readonly transform: ClipTransform;
   readonly audio: ClipAudio;
+  readonly transitions: import('./effects').ClipTransitions;
+  readonly effects: import('./effects').ClipEffects;
   /** Optional paired clip on the other kind of track (video ↔ audio). */
   readonly linkId: ClipId | null;
 }

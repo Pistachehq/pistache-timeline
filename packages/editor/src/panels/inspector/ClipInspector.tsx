@@ -16,6 +16,8 @@ import { Link2, RotateCcw, Unlink2, Volume2, VolumeX } from 'lucide-react';
 import { useTimeDisplayFormat } from '../../hooks/use-format-display-time';
 import { useRuntime } from '../../runtime/context';
 import { useAsset } from '../../runtime/hooks';
+import { ClipCropInspector } from './ClipCropInspector';
+import { ClipEffectsInspector } from './ClipEffectsInspector';
 import { InfoRow, InspectorSection } from './InspectorSection';
 
 type NumericTransformKey = 'positionX' | 'positionY' | 'rotation' | 'opacity';
@@ -276,9 +278,14 @@ export function ClipInspector({ clip, sequence }: { clip: Clip; sequence: Sequen
         </InspectorSection>
       ) : null}
 
-      <InspectorSection title="Effects">
-        <p className="py-1 text-xs text-fg-subtle">Effects, keyframes and color correction are not available yet.</p>
-      </InspectorSection>
+      {isVideo ? <ClipCropInspector clip={clip} locked={locked} /> : null}
+      <ClipEffectsInspector
+        clip={clip}
+        sequence={sequence}
+        locked={locked}
+        isVideo={isVideo}
+        isAudioTrack={isAudioTrack}
+      />
     </div>
   );
 }

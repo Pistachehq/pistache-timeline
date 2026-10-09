@@ -26,6 +26,7 @@ import { ASSET_DRAG_TYPE } from '../dnd';
 import { filesFromDataTransfer, isOsFileDrag } from '../file-drop';
 
 import { ClipItem } from './ClipItem';
+import { TrackTransitionOverlays } from './TrackTransitionOverlays';
 
 import { snapAssetDrop, snapTimelineFrame } from './timeline-snap';
 
@@ -259,6 +260,13 @@ export const TrackLane = memo(function TrackLane({
         <ClipItem key={clip.id} clip={clip} track={track} pixelsPerFrame={pixelsPerFrame} frameRate={frameRate} />
 
       ))}
+
+      <TrackTransitionOverlays
+        sequence={sequence}
+        track={track}
+        clips={clips}
+        pixelsPerFrame={pixelsPerFrame}
+      />
 
       {dragGhostClips.map((clip) => (
 

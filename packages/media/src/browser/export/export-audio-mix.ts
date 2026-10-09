@@ -1,5 +1,7 @@
 import {
   applyStereoPan,
+  audioEffectGainDb,
+  clipTransitionAudioMultiplier,
   combinedClipTrackLinearGain,
   effectiveClipLinearGain,
   findTrack,
@@ -41,12 +43,20 @@ function stereoSample(buffer: AudioBuffer, sourceSeconds: number): [number, numb
   return [readSample(buffer, sourceSeconds, 0), readSample(buffer, sourceSeconds, 1)];
 }
 
-function applyClipGain(left: number, right: number, clip: Clip, sequence: Sequence): [number, number] {
+function applyClipGain(
+  left: number,
+  right: number,
+  clip: Clip,
+  sequence: Sequence,
+  sequenceFrame: number,
+): [number, number] {
   const track = findTrack(sequence, clip.trackId);
-  const gain =
+  let gain =
     track?.kind === 'audio'
       ? combinedClipTrackLinearGain(clip.audio, track.volume, track.muted)
       : effectiveClipLinearGain(clip);
+  gain *= clipTransitionAudioMultiplier(clip, sequenceFrame);
+  gain *= 10 ** (audioEffectGainDb(clip.effects) / 20);
   return applyStereoPan(left, right, clip.audio.pan, gain);
 }
 
@@ -123,7 +133,7 @@ export async function mixSequenceAudio(
       if (!buffer) continue;
       const sourceSeconds = sourceSecondsForClip(clip, t, sequence.frameRate);
       const [sl, sr] = stereoSample(buffer, sourceSeconds);
-      const [gl, gr] = applyClipGain(sl, sr, clip, sequence);
+      const [gl, gr] = applyClipGain(sl, sr, clip, sequence, seqFrame);
       l += gl;
       r += gr;
     }

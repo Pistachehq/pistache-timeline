@@ -3,7 +3,9 @@ import { type FrameRate, type MediaTime } from '../time/rational';
 import {
   CURRENT_SCHEMA_VERSION,
   DEFAULT_CLIP_AUDIO,
+  DEFAULT_CLIP_EFFECTS,
   DEFAULT_CLIP_TRANSFORM,
+  DEFAULT_CLIP_TRANSITIONS,
   DEFAULT_PROJECT_NAME,
   DEFAULT_SEQUENCE_SETTINGS,
 } from './defaults';
@@ -165,6 +167,8 @@ export function createClip(options: CreateClipOptions): Clip {
     sourceOut: options.sourceOut,
     transform: DEFAULT_CLIP_TRANSFORM,
     audio: DEFAULT_CLIP_AUDIO,
+    transitions: DEFAULT_CLIP_TRANSITIONS,
+    effects: DEFAULT_CLIP_EFFECTS,
     linkId: options.linkId ?? null,
   };
 }

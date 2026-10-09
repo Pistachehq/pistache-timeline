@@ -1,5 +1,17 @@
 import { type FrameRate, type MediaTime } from '../time/rational';
 import {
+  AUDIO_FADE_CURVES,
+  DEFAULT_CLIP_EFFECTS,
+  DEFAULT_CLIP_TRANSITIONS,
+  VIDEO_EFFECT_KINDS,
+  VIDEO_TRANSITION_KINDS,
+  type AudioEffect,
+  type ClipEdgeTransition,
+  type ClipEffects,
+  type ClipTransitions,
+  type VideoEffect,
+} from '../model/effects';
+import {
   type AudioTrack,
   type Clip,
   type ClipId,
@@ -124,6 +136,99 @@ function parseClipTransform(value: unknown, path: string): ClipTransform {
   return { positionX, positionY, scaleX, scaleY, uniformScale, rotation, opacity };
 }
 
+function parseClipEdgeTransition(value: unknown, path: string): ClipEdgeTransition | null {
+  if (value == null) return null;
+  const obj = readObject(value, path);
+  const videoKind = readEnum(obj, 'videoKind', `${path}.videoKind`, [...VIDEO_TRANSITION_KINDS]);
+  if (videoKind === 'none') return null;
+  return {
+    durationFrames: readInteger(obj, 'durationFrames', path, 0),
+    videoKind,
+    audioCurve: readEnum(obj, 'audioCurve', `${path}.audioCurve`, [...AUDIO_FADE_CURVES]),
+  };
+}
+
+function parseClipTransitions(value: unknown, path: string): ClipTransitions {
+  if (value == null) return DEFAULT_CLIP_TRANSITIONS;
+  const obj = readObject(value, path);
+  return {
+    in: parseClipEdgeTransition(obj.in, `${path}.in`),
+    out: parseClipEdgeTransition(obj.out, `${path}.out`),
+  };
+}
+
+function parseVideoEffect(value: unknown, path: string): VideoEffect {
+  const obj = readObject(value, path);
+  const kind = readEnum(obj, 'kind', `${path}.kind`, [...VIDEO_EFFECT_KINDS]);
+  switch (kind) {
+    case 'blur':
+      return { kind, amount: readNumber(obj, 'amount', path) };
+    case 'brightness':
+    case 'contrast':
+    case 'saturation':
+    case 'sharpen':
+      return { kind, amount: readNumber(obj, 'amount', path) };
+    case 'hue-rotate':
+      return { kind, degrees: readNumber(obj, 'degrees', path) };
+    case 'vignette':
+      return { kind, amount: readNumber(obj, 'amount', path) };
+    case 'crop':
+      return {
+        kind,
+        top: readNumber(obj, 'top', path),
+        right: readNumber(obj, 'right', path),
+        bottom: readNumber(obj, 'bottom', path),
+        left: readNumber(obj, 'left', path),
+      };
+    case 'round-corners':
+      return { kind, radius: readNumber(obj, 'radius', path) };
+    default:
+      throw invalid(path, 'a supported video effect');
+  }
+}
+
+function parseAudioEffect(value: unknown, path: string): AudioEffect {
+  const obj = readObject(value, path);
+  const kind = readEnum(obj, 'kind', `${path}.kind`, [
+    'gain',
+    'highpass',
+    'lowpass',
+    'compressor',
+    'noise-gate',
+    'limiter',
+  ]);
+  switch (kind) {
+    case 'gain':
+      return { kind, gainDb: readNumber(obj, 'gainDb', path) };
+    case 'highpass':
+    case 'lowpass':
+      return { kind, frequencyHz: readNumber(obj, 'frequencyHz', path) };
+    case 'compressor':
+      return {
+        kind,
+        thresholdDb: readNumber(obj, 'thresholdDb', path),
+        ratio: readNumber(obj, 'ratio', path),
+        attackMs: readNumber(obj, 'attackMs', path),
+        releaseMs: readNumber(obj, 'releaseMs', path),
+      };
+    case 'noise-gate':
+      return { kind, thresholdDb: readNumber(obj, 'thresholdDb', path) };
+    case 'limiter':
+      return { kind, ceilingDb: readNumber(obj, 'ceilingDb', path) };
+    default:
+      throw invalid(path, 'a supported audio effect');
+  }
+}
+
+function parseClipEffects(value: unknown, path: string): ClipEffects {
+  if (value == null) return DEFAULT_CLIP_EFFECTS;
+  const obj = readObject(value, path);
+  return {
+    video: readArray(obj.video, `${path}.video`).map((item, i) => parseVideoEffect(item, `${path}.video[${i}]`)),
+    audio: readArray(obj.audio, `${path}.audio`).map((item, i) => parseAudioEffect(item, `${path}.audio[${i}]`)),
+  };
+}
+
 function parseClip(value: unknown, path: string): Clip {
   const obj = readObject(value, path);
   const audio = readObject(obj.audio, `${path}.audio`);
@@ -142,6 +247,8 @@ function parseClip(value: unknown, path: string): Clip {
       muted: readBoolean(audio, 'muted', `${path}.audio`),
       pan: readNumber(audio, 'pan', `${path}.audio`),
     },
+    transitions: parseClipTransitions(obj.transitions, `${path}.transitions`),
+    effects: parseClipEffects(obj.effects, `${path}.effects`),
     linkId: obj.linkId == null ? null : (readString(obj, 'linkId', path) as ClipId),
   };
 }

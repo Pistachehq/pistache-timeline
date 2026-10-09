@@ -220,13 +220,50 @@ export function getTopmostVideoClipAt(sequence: Sequence, frame: number): Active
   return null;
 }
 
+function previousClipOnTrack(sequence: Sequence, track: Track, clip: Clip): Clip | undefined {
+  let prev: Clip | undefined;
+  for (const id of track.clipIds) {
+    const candidate = sequence.clips[id];
+    if (!candidate || candidate.start >= clip.start) continue;
+    if (!prev || candidate.start > prev.start) prev = candidate;
+  }
+  return prev;
+}
+
+/** Clip fading in before its start (cross-dissolve / audio crossfade with the previous cut). */
+export function getCrossfadePreRollClipAt(sequence: Sequence, track: Track, frame: number): Clip | undefined {
+  for (const id of track.clipIds) {
+    const clip = sequence.clips[id];
+    if (!clip?.enabled) continue;
+    const edge = clip.transitions.in;
+    if (!edge || edge.durationFrames <= 0) continue;
+    const n = edge.durationFrames;
+    if (frame < clip.start - n || frame >= clip.start) continue;
+    const prev = previousClipOnTrack(sequence, track, clip);
+    if (prev && getClipEnd(prev) === clip.start) return clip;
+  }
+  return undefined;
+}
+
 /** Video/image clips on enabled, visible tracks at `frame`, bottom track first (for compositing). */
 export function getStackedVideoClipsAt(sequence: Sequence, frame: number): ActiveVideoClip[] {
   const stack: ActiveVideoClip[] = [];
   for (const track of sequence.videoTracks) {
     if (!track.enabled || !track.visible) continue;
+    const seen = new Set<ClipId>();
     const clip = getClipAtFrame(sequence, track, frame);
-    if (clip?.enabled) stack.push({ clip, track });
+    if (clip?.enabled) {
+      stack.push({ clip, track });
+      seen.add(clip.id);
+    }
+    const preRoll = getCrossfadePreRollClipAt(sequence, track, frame);
+    if (
+      preRoll &&
+      !seen.has(preRoll.id) &&
+      preRoll.transitions.in?.videoKind === 'cross-dissolve'
+    ) {
+      stack.push({ clip: preRoll, track });
+    }
   }
   return stack;
 }
@@ -245,9 +282,16 @@ export function getActiveAudioClipsAt(sequence: Sequence, frame: number): Active
   const active: ActiveAudioClip[] = [];
   for (const track of sequence.audioTracks) {
     if (!track.enabled || track.muted) continue;
+    const seen = new Set<ClipId>();
     const clip = getClipAtFrame(sequence, track, frame);
-    if (!clip?.enabled || clip.audio.muted) continue;
-    active.push({ clip, track });
+    if (clip?.enabled && !clip.audio.muted) {
+      active.push({ clip, track });
+      seen.add(clip.id);
+    }
+    const preRoll = getCrossfadePreRollClipAt(sequence, track, frame);
+    if (preRoll && !seen.has(preRoll.id) && !preRoll.audio.muted) {
+      active.push({ clip: preRoll, track });
+    }
   }
   return active;
 }
@@ -268,8 +312,16 @@ export function getAudibleClipsAt(
     clips.push(clip);
   };
   for (const { clip } of getActiveAudioClipsAt(sequence, frame)) add(clip);
-  for (const { clip } of getStackedVideoClipsAt(sequence, frame)) {
-    if (clipContributesEmbeddedAudio(clip)) add(clip);
+  for (const track of sequence.videoTracks) {
+    if (!track.enabled || !track.visible) continue;
+    const seen = new Set<ClipId>();
+    const atFrame = getClipAtFrame(sequence, track, frame);
+    if (atFrame) {
+      if (clipContributesEmbeddedAudio(atFrame)) add(atFrame);
+      seen.add(atFrame.id);
+    }
+    const preRoll = getCrossfadePreRollClipAt(sequence, track, frame);
+    if (preRoll && !seen.has(preRoll.id) && clipContributesEmbeddedAudio(preRoll)) add(preRoll);
   }
   return clips;
 }

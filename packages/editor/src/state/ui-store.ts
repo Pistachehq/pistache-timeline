@@ -7,6 +7,8 @@ import {
 } from '@timeline/core';
 import { createId } from '@timeline/shared';
 import { createStore, type StoreApi } from 'zustand/vanilla';
+import { type EffectLibraryPayload } from '../panels/dnd';
+import { type EffectCategoryId } from '../panels/project/effects-catalog';
 
 export type EditTool = 'select' | 'razor';
 export type MonitorScale = 'fit' | '25' | '50' | '100';
@@ -79,6 +81,8 @@ export interface PromptRequest {
   readonly resolve: (value: string | null) => void;
 }
 
+export type ProjectBinTab = 'media' | 'effects';
+
 export type DialogState =
   | { readonly kind: 'export' }
   | { readonly kind: 'about' }
@@ -109,6 +113,13 @@ export interface UiState {
   readonly playbackMeterPeak: number;
   /** Open folder in the project media bin (`null` = bin root). */
   readonly mediaBinOpenFolderId: MediaBinFolderId | null;
+  readonly projectBinTab: ProjectBinTab;
+  /** Open category in the effects bin (`null` = category list). */
+  readonly effectsBinOpenCategoryId: EffectCategoryId | null;
+  /** Payload while dragging from the effects library (highlights timeline drop targets). */
+  readonly effectDrag: EffectLibraryPayload | null;
+  /** Clip being cropped in the program monitor (`null` = editor closed). */
+  readonly clipCropEditId: ClipId | null;
   /** Folder/asset ids playing a short enter animation in the media bin. */
   readonly mediaBinPopInIds: readonly string[];
   setTool(tool: EditTool): void;
@@ -133,6 +144,10 @@ export interface UiState {
   setAssetDrag(assetId: MediaAssetId | null): void;
   setPlaybackMeter(clipId: ClipId | null, peak: number): void;
   setMediaBinOpenFolderId(folderId: MediaBinFolderId | null): void;
+  setProjectBinTab(tab: ProjectBinTab): void;
+  setEffectsBinOpenCategoryId(categoryId: EffectCategoryId | null): void;
+  setEffectDrag(payload: EffectLibraryPayload | null): void;
+  setClipCropEditId(clipId: ClipId | null): void;
   flashMediaBinPopIn(ids: readonly string[]): void;
 }
 
@@ -159,6 +174,10 @@ export function createUiStore(): UiStore {
     playbackMeterClipId: null,
     playbackMeterPeak: 0,
     mediaBinOpenFolderId: null,
+    projectBinTab: 'media',
+    effectsBinOpenCategoryId: null,
+    effectDrag: null,
+    clipCropEditId: null,
     mediaBinPopInIds: [],
 
     setTool: (tool) => set({ tool }),
@@ -229,6 +248,10 @@ export function createUiStore(): UiStore {
     setPlaybackMeter: (playbackMeterClipId, playbackMeterPeak) =>
       set({ playbackMeterClipId, playbackMeterPeak: Math.max(0, Math.min(1, playbackMeterPeak)) }),
     setMediaBinOpenFolderId: (mediaBinOpenFolderId) => set({ mediaBinOpenFolderId }),
+    setProjectBinTab: (projectBinTab) => set({ projectBinTab }),
+    setEffectsBinOpenCategoryId: (effectsBinOpenCategoryId) => set({ effectsBinOpenCategoryId }),
+    setEffectDrag: (effectDrag) => set({ effectDrag }),
+    setClipCropEditId: (clipCropEditId) => set({ clipCropEditId }),
 
     flashMediaBinPopIn(ids) {
       const unique = [...new Set(ids.filter(Boolean))];

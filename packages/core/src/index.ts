@@ -10,7 +10,10 @@ export * from './model/invariants';
 
 export * from './operations/common';
 export * from './operations/clips';
+export * from './operations/clip-effects';
 export * from './operations/tracks';
+export * from './model/effects';
+export * from './render/clip-render';
 export * from './operations/media';
 export * from './operations/media-bin';
 
