@@ -3,13 +3,15 @@ import {
   listMediaBinFolderContents,
   type MediaAssetId,
   type MediaBinFolderId,
-  type Project,
 } from '@timeline/core';
 import { cn } from '@timeline/ui';
-import { ChevronRight, Folder, FolderOpen, Trash2 } from 'lucide-react';
-import { type DragEvent, useCallback, useState } from 'react';
-import { useRuntime, useProjectState } from '../../runtime/context';
+import { ArrowLeft } from 'lucide-react';
+import { type DragEvent, type MouseEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useRuntime, useProjectState, useUiState } from '../../runtime/context';
 import { ASSET_DRAG_TYPE } from '../dnd';
+import { assetIdsForBinMove, selectMediaAssetClick } from './media-bin-selection';
+import { MediaBinMarqueeSelection } from './MediaBinMarqueeSelection';
+import { MediaFolderGridItem } from './MediaFolderGridItem';
 import { MediaListItem } from './MediaListItem';
 
 const GRID = 'grid grid-cols-3 gap-1.5';
@@ -36,8 +38,11 @@ function useAssetDropTarget(folderId: MediaBinFolderId | null) {
       event.preventDefault();
       event.stopPropagation();
       setActive(false);
-      const assetId = event.dataTransfer.getData(ASSET_DRAG_TYPE);
-      if (assetId) runtime.actions.media.moveAssetToBin(assetId as MediaAssetId, folderId);
+      const assetId = event.dataTransfer.getData(ASSET_DRAG_TYPE) as MediaAssetId;
+      if (assetId) {
+        const { assetIds } = runtime.stores.selection.getState();
+        runtime.actions.media.moveAssetsToBin(assetIdsForBinMove(assetId, assetIds), folderId);
+      }
     },
     [folderId, runtime.actions.media],
   );
@@ -45,149 +50,102 @@ function useAssetDropTarget(folderId: MediaBinFolderId | null) {
   return { active, onDragOver, onDragLeave, onDrop };
 }
 
-function BinFolderRow({
-  project,
-  folderId,
-  collapsed,
-  toggleCollapsed,
+function MediaBinBackItem({
+  label,
+  onBack,
 }: {
-  project: Project;
-  folderId: MediaBinFolderId;
-  collapsed: ReadonlySet<string>;
-  toggleCollapsed: (id: MediaBinFolderId) => void;
+  readonly label: string;
+  readonly onBack: () => void;
 }) {
-  const runtime = useRuntime();
-  const folder = project.mediaBinFolders[folderId];
-  if (!folder) return null;
-  const expanded = !collapsed.has(folderId);
-  const drop = useAssetDropTarget(folderId);
-  const { folders, assets } = listMediaBinFolderContents(project, folderId);
-  const childCount = folders.length + assets.length;
-
   return (
-    <li className="col-span-3 list-none">
-      <div
-        className={cn(
-          'group flex items-center gap-0.5 rounded-sm py-1 pr-1',
-          drop.active && 'bg-accent/20 ring-1 ring-accent/50',
-        )}
-        onDragOver={drop.onDragOver}
-        onDragLeave={drop.onDragLeave}
-        onDrop={drop.onDrop}
+    <li className="list-none">
+      <button
+        type="button"
+        className="flex w-full flex-col rounded-sm p-1 text-left outline-none hover:bg-surface-3"
+        onClick={onBack}
+        onDoubleClick={onBack}
+        title="Go to parent folder"
       >
-        <button
-          type="button"
-          className="flex size-7 shrink-0 items-center justify-center rounded-xs text-fg-muted hover:bg-surface-3"
-          aria-expanded={expanded}
-          aria-label={expanded ? 'Collapse folder' : 'Expand folder'}
-          onClick={() => toggleCollapsed(folderId)}
-        >
-          <ChevronRight className={cn('size-3.5 transition-transform', expanded && 'rotate-90')} />
-        </button>
-        <button
-          type="button"
-          className="flex min-w-0 flex-1 items-center gap-2 rounded-xs py-0.5 text-left hover:bg-surface-3"
-          onDoubleClick={() => void runtime.actions.media.promptRenameBinFolder(folderId)}
-          title="Double-click to rename"
-        >
-          {expanded ? (
-            <FolderOpen className="size-4 shrink-0 text-accent" />
-          ) : (
-            <Folder className="size-4 shrink-0 text-accent" />
-          )}
-          <span className="min-w-0 flex-1 truncate text-sm font-medium text-fg">{folder.name}</span>
-          <span className="shrink-0 text-2xs text-fg-subtle">{childCount}</span>
-        </button>
-        <button
-          type="button"
-          className="rounded-xs p-1 text-fg-subtle opacity-0 hover:bg-surface-4 hover:text-danger group-hover:opacity-100"
-          aria-label={`Delete folder ${folder.name}`}
-          onClick={() => void runtime.actions.media.removeBinFolder(folderId)}
-        >
-          <Trash2 className="size-3.5" />
-        </button>
-      </div>
-      {expanded ? (
-        <MediaBinLevel
-          project={project}
-          parentId={folderId}
-          collapsed={collapsed}
-          toggleCollapsed={toggleCollapsed}
-          nested
-        />
-      ) : null}
+        <div className="flex aspect-video w-full items-center justify-center rounded-xs bg-surface-1 ring-1 ring-dashed ring-line">
+          <ArrowLeft className="size-8 text-fg-muted" strokeWidth={1.5} />
+        </div>
+        <span className="mt-1 line-clamp-2 min-h-[2lh] px-0.5 text-2xs leading-tight text-fg-subtle">{label}</span>
+      </button>
     </li>
   );
 }
 
-function MediaBinLevel({
-  project,
-  parentId,
-  collapsed,
-  toggleCollapsed,
-  nested = false,
-}: {
-  project: Project;
-  parentId: MediaBinFolderId | null;
-  collapsed: ReadonlySet<string>;
-  toggleCollapsed: (id: MediaBinFolderId) => void;
-  nested?: boolean;
-}) {
-  const { folders, assets } = listMediaBinFolderContents(project, parentId);
-  const drop = useAssetDropTarget(parentId);
-
-  return (
-    <ul
-      className={cn(
-        GRID,
-        parentId === null && 'min-h-0 flex-1 overflow-y-auto p-1.5',
-        nested && 'mt-1 w-full border-l border-line/50 pl-2',
-        drop.active && parentId === null && 'rounded-sm bg-accent/10',
-      )}
-      aria-label={parentId === null ? 'Media assets' : undefined}
-      onDragOver={drop.onDragOver}
-      onDragLeave={drop.onDragLeave}
-      onDrop={drop.onDrop}
-    >
-      {folders.map((folder) => (
-        <BinFolderRow
-          key={folder.id}
-          project={project}
-          folderId={folder.id}
-          collapsed={collapsed}
-          toggleCollapsed={toggleCollapsed}
-        />
-      ))}
-      {assets.map((asset) => (
-        <MediaListItem key={asset.id} asset={asset} />
-      ))}
-    </ul>
-  );
-}
-
 export function MediaBinView() {
+  const runtime = useRuntime();
   const project = useProjectState((s) => s.project);
-  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set());
+  const openFolderId = useUiState((s) => s.mediaBinOpenFolderId);
+  const setOpenFolderId = runtime.stores.ui.getState().setMediaBinOpenFolderId;
 
-  const toggleCollapsed = useCallback((folderId: MediaBinFolderId) => {
-    setCollapsed((prev) => {
-      const next = new Set(prev);
-      if (next.has(folderId)) next.delete(folderId);
-      else next.add(folderId);
-      return next;
-    });
-  }, []);
+  const currentFolder = openFolderId ? project.mediaBinFolders[openFolderId] : null;
+
+  useEffect(() => {
+    if (openFolderId && !project.mediaBinFolders[openFolderId]) {
+      setOpenFolderId(null);
+    }
+  }, [openFolderId, project.mediaBinFolders, setOpenFolderId]);
+
+  const { folders, assets } = listMediaBinFolderContents(project, openFolderId);
+  const drop = useAssetDropTarget(openFolderId);
+
+  const backLabel = useMemo(() => {
+    if (!currentFolder) return '';
+    const parent = currentFolder.parentId ? project.mediaBinFolders[currentFolder.parentId] : null;
+    return parent ? `Back · ${parent.name}` : 'Back · Project';
+  }, [currentFolder, project.mediaBinFolders]);
+
+  const goBack = useCallback(() => {
+    if (!currentFolder) return;
+    setOpenFolderId(currentFolder.parentId);
+  }, [currentFolder, setOpenFolderId]);
+
+  const openFolder = useCallback(
+    (folderId: MediaBinFolderId) => {
+      setOpenFolderId(folderId);
+    },
+    [setOpenFolderId],
+  );
 
   const counts = countMediaBinItems(project);
+  const gridRef = useRef<HTMLUListElement>(null);
+  const orderedAssetIds = useMemo(() => assets.map((a) => a.id), [assets]);
+
+  const onAssetSelectClick = useCallback(
+    (assetId: MediaAssetId) => (event: MouseEvent) => {
+      selectMediaAssetClick(runtime.stores.selection.getState(), orderedAssetIds, assetId, event);
+    },
+    [orderedAssetIds, runtime.stores.selection],
+  );
 
   return (
     <>
-      <MediaBinLevel
-        project={project}
-        parentId={null}
-        collapsed={collapsed}
-        toggleCollapsed={toggleCollapsed}
-      />
+      <MediaBinMarqueeSelection gridRef={gridRef} />
+      {currentFolder ? (
+        <div className="shrink-0 truncate border-b border-line px-2.5 py-1 text-2xs text-fg-subtle">
+          {currentFolder.name}
+        </div>
+      ) : null}
+      <ul
+        ref={gridRef}
+        data-media-bin-grid
+        className={cn(GRID, 'min-h-0 flex-1 overflow-y-auto p-1.5', drop.active && 'rounded-sm bg-accent/10')}
+        aria-label="Media assets"
+        onDragOver={drop.onDragOver}
+        onDragLeave={drop.onDragLeave}
+        onDrop={drop.onDrop}
+      >
+        {currentFolder ? <MediaBinBackItem label={backLabel} onBack={goBack} /> : null}
+        {folders.map((folder) => (
+          <MediaFolderGridItem key={folder.id} folder={folder} onOpen={() => openFolder(folder.id)} />
+        ))}
+        {assets.map((asset) => (
+          <MediaListItem key={asset.id} asset={asset} onSelectClick={onAssetSelectClick(asset.id)} />
+        ))}
+      </ul>
       <div className="flex h-7 shrink-0 items-center justify-between border-t border-line px-2.5 text-2xs text-fg-subtle">
         <span>
           {counts.assets} item{counts.assets === 1 ? '' : 's'}

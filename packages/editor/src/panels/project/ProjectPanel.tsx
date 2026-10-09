@@ -3,7 +3,7 @@ import { Button, EmptyState, IconButton, PanelFrame } from '@timeline/ui';
 import { FolderOpen, FolderPlus, FolderUp, Import } from 'lucide-react';
 import { type DragEvent } from 'react';
 import { executeCommand, shortcutLabel } from '../../commands/commands';
-import { useProjectState, useRuntime } from '../../runtime/context';
+import { useProjectState, useRuntime, useUiState } from '../../runtime/context';
 import { allowOsFileDrop, filesFromDataTransfer, isOsFileDrag } from '../file-drop';
 import { MediaBinView } from './MediaBinView';
 
@@ -12,10 +12,11 @@ export function ProjectPanel() {
   const runtime = useRuntime();
   const project = useProjectState((s) => s.project);
   const projectName = project.name;
-  const { assets: assetCount } = countMediaBinItems(project);
+  const { assets: assetCount, folders: folderCount } = countMediaBinItems(project);
+  const openBinFolderId = useUiState((s) => s.mediaBinOpenFolderId);
   const importMedia = () => executeCommand('file.import', runtime);
   const importFolder = () => executeCommand('file.importFolder', runtime);
-  const newFolder = () => runtime.actions.media.createBinFolder(null);
+  const newFolder = () => runtime.actions.media.createBinFolder(openBinFolderId);
 
   const onDropFiles = (event: DragEvent) => {
     if (!isOsFileDrag(event.dataTransfer)) return;
@@ -44,7 +45,7 @@ export function ProjectPanel() {
         onDragOver={allowOsFileDrop}
         onDrop={onDropFiles}
       >
-        {assetCount === 0 ? (
+        {assetCount === 0 && folderCount === 0 ? (
           <EmptyState
             icon={<FolderOpen />}
             title="No media imported"

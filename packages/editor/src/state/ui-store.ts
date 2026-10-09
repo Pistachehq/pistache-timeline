@@ -1,4 +1,4 @@
-import { type ClipId, clampZoom, type MediaAssetId, type TrackId } from '@timeline/core';
+import { type ClipId, clampZoom, type MediaAssetId, type MediaBinFolderId, type TrackId } from '@timeline/core';
 import { createId } from '@timeline/shared';
 import { createStore, type StoreApi } from 'zustand/vanilla';
 
@@ -97,6 +97,8 @@ export interface UiState {
   readonly playbackMeterClipId: ClipId | null;
   /** Short-term peak 0…1 for live waveform motion. */
   readonly playbackMeterPeak: number;
+  /** Open folder in the project media bin (`null` = bin root). */
+  readonly mediaBinOpenFolderId: MediaBinFolderId | null;
 
   setTool(tool: EditTool): void;
   setZoom(pixelsPerFrame: number): void;
@@ -119,6 +121,7 @@ export interface UiState {
   setMarquee(marquee: MarqueeState | null): void;
   setAssetDrag(assetId: MediaAssetId | null): void;
   setPlaybackMeter(clipId: ClipId | null, peak: number): void;
+  setMediaBinOpenFolderId(folderId: MediaBinFolderId | null): void;
 }
 
 export type UiStore = StoreApi<UiState>;
@@ -141,6 +144,7 @@ export function createUiStore(): UiStore {
     assetDrag: null,
     playbackMeterClipId: null,
     playbackMeterPeak: 0,
+    mediaBinOpenFolderId: null,
 
     setTool: (tool) => set({ tool }),
     setZoom: (pixelsPerFrame) => set({ pixelsPerFrame: clampZoom(pixelsPerFrame) }),
@@ -209,5 +213,6 @@ export function createUiStore(): UiStore {
     setAssetDrag: (assetDrag) => set({ assetDrag }),
     setPlaybackMeter: (playbackMeterClipId, playbackMeterPeak) =>
       set({ playbackMeterClipId, playbackMeterPeak: Math.max(0, Math.min(1, playbackMeterPeak)) }),
+    setMediaBinOpenFolderId: (mediaBinOpenFolderId) => set({ mediaBinOpenFolderId }),
   }));
 }

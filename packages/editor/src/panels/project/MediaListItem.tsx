@@ -2,7 +2,7 @@ import { type MediaAsset, mediaTimeToSeconds } from '@timeline/core';
 import { formatSeconds } from '@timeline/shared';
 import { cn, IconButton } from '@timeline/ui';
 import { AudioLines, Film, ImageIcon, Link2Off, ListPlus, Loader2, Trash2 } from 'lucide-react';
-import { memo } from 'react';
+import { memo, type MouseEvent } from 'react';
 import { useMediaState, useRuntime, useSelectionState } from '../../runtime/context';
 import { ASSET_DRAG_TYPE } from '../dnd';
 
@@ -42,9 +42,15 @@ function offlineBadge(status: string | undefined): boolean {
   return status === 'offline' || status === 'error';
 }
 
-export const MediaListItem = memo(function MediaListItem({ asset }: { asset: MediaAsset }) {
+export const MediaListItem = memo(function MediaListItem({
+  asset,
+  onSelectClick,
+}: {
+  asset: MediaAsset;
+  onSelectClick: (event: MouseEvent) => void;
+}) {
   const runtime = useRuntime();
-  const selected = useSelectionState((s) => s.assetId === asset.id);
+  const selected = useSelectionState((s) => s.assetIds.includes(asset.id));
   const status = useMediaState((s) => s.entries[asset.id]?.status);
   const offline = offlineBadge(status);
 
@@ -54,8 +60,12 @@ export const MediaListItem = memo(function MediaListItem({ asset }: { asset: Med
         'group relative list-none',
         selected && 'z-10',
       )}
+      data-media-asset-id={asset.id}
       draggable={!offline}
       onDragStart={(event) => {
+        if (!runtime.stores.selection.getState().assetIds.includes(asset.id)) {
+          runtime.stores.selection.getState().selectAssets([asset.id], 'replace');
+        }
         event.dataTransfer.setData(ASSET_DRAG_TYPE, asset.id);
         event.dataTransfer.effectAllowed = 'copyMove';
         runtime.stores.ui.getState().setAssetDrag(asset.id);
@@ -70,7 +80,7 @@ export const MediaListItem = memo(function MediaListItem({ asset }: { asset: Med
           selected ? 'bg-accent-muted ring-1 ring-accent/40' : 'hover:bg-surface-3',
         )}
         aria-pressed={selected}
-        onClick={() => runtime.stores.selection.getState().selectAsset(asset.id)}
+        onClick={onSelectClick}
         onDoubleClick={() => runtime.actions.edit.insertAssetAtPlayhead(asset.id)}
         title={`${asset.source.fileName}\nDouble-click to insert at the playhead, or drag onto a track.`}
       >

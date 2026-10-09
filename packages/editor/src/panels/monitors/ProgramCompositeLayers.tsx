@@ -10,7 +10,7 @@ import {
 import { clamp } from '@timeline/shared';
 import { useCallback, useEffect, useMemo, useRef, type PointerEvent as ReactPointerEvent } from 'react';
 import { useElementSize } from '../../hooks/use-element-size';
-import { playbackDecodeFactor, videoDecodeDimensions } from '../../playback/playback-decode';
+import { playbackDecodeFactor, programVideoDecodeSize } from '../../playback/playback-decode';
 import { sourceTimeForFrame } from '../../playback/frame-math';
 import {
   useMediaState,
@@ -89,7 +89,8 @@ function CompositeLayer({
   const mediaW = asset?.resolution?.width ?? 0;
   const mediaH = asset?.resolution?.height ?? 0;
   const box = letterboxMediaSize(frameWidth, frameHeight, mediaW, mediaH);
-  const decode = videoDecodeDimensions(mediaW, mediaH, box.width, box.height, decodeFactor);
+  const seq = sequence.resolution;
+  const decode = programVideoDecodeSize(seq.width, seq.height, mediaW, mediaH, decodeFactor);
 
   const bindVideo = useCallback(
     (node: HTMLVideoElement | null) => {
@@ -111,9 +112,11 @@ function CompositeLayer({
   useEffect(() => {
     const el = videoRef.current;
     if (!el || isImage) return;
-    el.width = decode.width;
-    el.height = decode.height;
-  }, [decode.height, decode.width, isImage]);
+    if (el.width !== decode.width || el.height !== decode.height) {
+      el.width = decode.width;
+      el.height = decode.height;
+    }
+  }, [decode.height, decode.width, isImage, decodeFactor]);
 
   if (!asset || !url || box.width <= 0 || box.height <= 0) return null;
 
@@ -133,7 +136,15 @@ function CompositeLayer({
       {isImage ? (
         <img src={url} alt="" draggable={false} className={mediaClass} decoding="async" />
       ) : (
-        <video ref={bindVideo} muted playsInline preload="auto" className={mediaClass} />
+        <video
+          ref={bindVideo}
+          muted
+          playsInline
+          preload="auto"
+          className={mediaClass}
+          width={decode.width}
+          height={decode.height}
+        />
       )}
     </div>
   );

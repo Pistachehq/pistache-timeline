@@ -91,10 +91,6 @@ export class SequencePlaybackController {
       frame,
       playing,
       resolveHandle: (assetId) => media.getState().entries[assetId]?.handle ?? null,
-      assetPrefersVideo: (assetId) => {
-        const asset = project.mediaAssets[assetId];
-        return !!asset?.hasVideo;
-      },
     });
   }
 

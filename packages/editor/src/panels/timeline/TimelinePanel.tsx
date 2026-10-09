@@ -1,5 +1,6 @@
 import {
   fitZoom,
+  getActiveSequence,
   getSequenceDuration,
   type Sequence,
   type Track,
@@ -29,6 +30,7 @@ import { TimelineRuler } from './TimelineRuler';
 import { TimelineToolbar } from './TimelineToolbar';
 import { TrackHeader } from './TrackHeader';
 import { TrackLane } from './TrackLane';
+import { playheadStepFromWheel } from './timeline-wheel-playhead';
 import { useVisibleRange } from './use-visible-range';
 
 const WHEEL_ZOOM_SENSITIVITY = 0.0015;
@@ -105,17 +107,37 @@ export function TimelinePanel() {
   const visibleRange = useVisibleRange(scrollerRef, pixelsPerFrame, laneViewportWidth);
   const pendingAnchorRef = useZoomAnchoring(scrollerRef, pixelsPerFrame);
 
-  // Ctrl/⌘ + wheel zooms around the pointer. Needs a non-passive listener.
+  // Wheel: scrub playhead. Ctrl/⌘ + wheel zooms around the pointer. Non-passive listener.
   useEffect(() => {
     const scroller = scrollerRef.current;
     if (!scroller) return;
     const onWheel = (event: WheelEvent) => {
-      if (!event.ctrlKey && !event.metaKey) return;
+      const { ui, project, playback } = runtime.stores;
+      if (event.ctrlKey || event.metaKey) {
+        event.preventDefault();
+        const rect = scroller.getBoundingClientRect();
+        pendingAnchorRef.current = Math.max(0, event.clientX - rect.left - TRACK_HEADER_WIDTH);
+        ui.getState().setZoom(ui.getState().pixelsPerFrame * Math.exp(-event.deltaY * WHEEL_ZOOM_SENSITIVITY));
+        return;
+      }
+
+      const sequence = getActiveSequence(project.getState().project);
+      if (!sequence) return;
+
+      const delta = playheadStepFromWheel(
+        event.deltaY,
+        event.deltaMode,
+        ui.getState().timeDisplayFormat,
+        sequence.frameRate,
+        event.altKey,
+      );
+      if (delta === 0) return;
+
       event.preventDefault();
-      const { ui } = runtime.stores;
-      const rect = scroller.getBoundingClientRect();
-      pendingAnchorRef.current = Math.max(0, event.clientX - rect.left - TRACK_HEADER_WIDTH);
-      ui.getState().setZoom(ui.getState().pixelsPerFrame * Math.exp(-event.deltaY * WHEEL_ZOOM_SENSITIVITY));
+      const end = getSequenceDuration(sequence);
+      const next = Math.max(0, Math.min(end, playback.getState().playhead + delta));
+      playback.getState().setPlaying(false);
+      playback.getState().setPlayhead(next);
     };
     scroller.addEventListener('wheel', onWheel, { passive: false });
     return () => scroller.removeEventListener('wheel', onWheel);

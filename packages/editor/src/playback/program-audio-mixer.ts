@@ -103,10 +103,9 @@ export class ProgramAudioMixer {
     readonly sequence: Sequence;
     readonly frame: number;
     readonly resolveHandle: (assetId: MediaAssetId) => MediaHandle | null;
-    readonly assetPrefersVideo: (assetId: MediaAssetId) => boolean;
     readonly playing: boolean;
   }): void {
-    const { clips, sequence, frame, resolveHandle, assetPrefersVideo, playing } = options;
+    const { clips, sequence, frame, resolveHandle, playing } = options;
     const active = new Set<ClipId>();
 
     for (const clip of clips) {
@@ -115,10 +114,9 @@ export class ProgramAudioMixer {
       const handle = resolveHandle(clip.assetId);
       if (!handle) continue;
 
-      const preferVideo = assetPrefersVideo(clip.assetId);
       if (!lane || lane.assetId !== clip.assetId) {
         if (lane) this.#removeLane(clip.id);
-        const created = this.#createLane(clip.id, clip.assetId, preferVideo);
+        const created = this.#createLane(clip.id, clip.assetId, false);
         if (!created) continue;
         lane = created;
         this.#lanes.set(clip.id, lane);

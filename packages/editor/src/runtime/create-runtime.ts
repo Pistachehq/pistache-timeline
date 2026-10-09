@@ -69,8 +69,7 @@ export function createEditorRuntime(
       publishDocumentState();
       const sequence = state.project.sequences[state.project.activeSequenceId];
       stores.selection.getState().retainClips((id) => !!sequence?.clips[id]);
-      const assetId = stores.selection.getState().assetId;
-      if (assetId && !state.project.mediaAssets[assetId]) stores.selection.getState().selectAsset(null);
+      stores.selection.getState().retainAssets((id) => !!state.project.mediaAssets[id]);
     }),
   ];
   publishDocumentState();

@@ -18,7 +18,7 @@ import {
   removeMediaAsset,
 } from '@timeline/core';
 import { buildWaveformFromHandle, type MediaHandle, type MediaMetadata, type PickedMedia } from '@timeline/media';
-import { isAbortError, stripExtension, toErrorMessage } from '@timeline/shared';
+import { isAbortError, ok, stripExtension, toErrorMessage } from '@timeline/shared';
 import { type EditorServices } from '../runtime/services';
 
 const THUMBNAIL_WIDTH = 192;
@@ -309,6 +309,9 @@ export function createMediaActions(services: EditorServices) {
       if (!confirmed) return false;
       const result = projectStore.getState().apply('Remove Folder', (p) => removeMediaBinFolder(p, folderId));
       if (!result.ok) ui.getState().notify(result.error.message, 'error');
+      else if (ui.getState().mediaBinOpenFolderId === folderId) {
+        ui.getState().setMediaBinOpenFolderId(folder.parentId);
+      }
       return result.ok;
     },
 
@@ -327,7 +330,21 @@ export function createMediaActions(services: EditorServices) {
     },
 
     moveAssetToBin(assetId: MediaAssetId, folderId: MediaBinFolderId | null): boolean {
-      const result = projectStore.getState().apply('Move Media', (p) => moveMediaAssetToFolder(p, assetId, folderId));
+      return this.moveAssetsToBin([assetId], folderId);
+    },
+
+    moveAssetsToBin(assetIds: readonly MediaAssetId[], folderId: MediaBinFolderId | null): boolean {
+      const unique = [...new Set(assetIds)];
+      if (unique.length === 0) return false;
+      const result = projectStore.getState().apply('Move Media', (p) => {
+        let next = p;
+        for (const assetId of unique) {
+          const step = moveMediaAssetToFolder(next, assetId, folderId);
+          if (!step.ok) return step;
+          next = step.value;
+        }
+        return ok(next);
+      });
       if (!result.ok) ui.getState().notify(result.error.message, 'error');
       return result.ok;
     },
@@ -348,7 +365,7 @@ export function createMediaActions(services: EditorServices) {
       }
       const result = projectStore.getState().apply('Remove Media', (p) => removeMediaAsset(p, assetId));
       if (!result.ok) ui.getState().notify(result.error.message, 'error');
-      else if (selection.getState().assetId === assetId) selection.getState().selectAsset(null);
+      else selection.getState().retainAssets((id) => id !== assetId);
     },
 
     /** Frees every media handle held for the current project. */

@@ -7,7 +7,7 @@ import { shortcutLabel } from '../../commands/commands';
 import { useElementSize } from '../../hooks/use-element-size';
 import { SequencePlaybackController } from '../../playback/sequence-playback';
 import { useTimeDisplayFormat } from '../../hooks/use-format-display-time';
-import { playbackDecodeFactor } from '../../playback/playback-decode';
+import { playbackDecodeFactor, programVideoDecodeSize } from '../../playback/playback-decode';
 import { usePlaybackState, useRuntime, useUiState } from '../../runtime/context';
 import { useActiveSequence } from '../../runtime/hooks';
 import { type MonitorScale } from '../../state/ui-store';
@@ -95,10 +95,15 @@ export function ProgramMonitor() {
     const video = videoRef.current;
     if (!video || !sequence) return;
     const factor = playbackDecodeFactor(decodeScale);
-    const w = Math.max(2, Math.round(sequence.resolution.width * factor));
-    const h = Math.max(2, Math.round(sequence.resolution.height * factor));
-    video.width = w;
-    video.height = h;
+    const { width, height } = programVideoDecodeSize(
+      sequence.resolution.width,
+      sequence.resolution.height,
+      sequence.resolution.width,
+      sequence.resolution.height,
+      factor,
+    );
+    video.width = width;
+    video.height = height;
   }, [sequence, decodeScale]);
 
   const size = sequence ? frameSize(sequence, scale, area) : { width: 0, height: 0 };

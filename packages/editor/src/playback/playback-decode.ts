@@ -4,27 +4,38 @@ export function playbackDecodeFactor(scale: PlaybackDecodeScale): number {
   return Number(scale);
 }
 
-/** Internal decode resolution for a `<video>` (reduces decoder / compositor cost). */
-export function videoDecodeDimensions(
+function letterboxMediaSize(
+  frameWidth: number,
+  frameHeight: number,
   mediaWidth: number,
   mediaHeight: number,
-  displayWidth: number,
-  displayHeight: number,
+): { readonly width: number; readonly height: number } {
+  if (frameWidth <= 0 || frameHeight <= 0 || mediaWidth <= 0 || mediaHeight <= 0) {
+    return { width: frameWidth, height: frameHeight };
+  }
+  const fit = Math.min(frameWidth / mediaWidth, frameHeight / mediaHeight);
+  return { width: mediaWidth * fit, height: mediaHeight * fit };
+}
+
+/**
+ * Preview decode size in sequence pixels × `decodeFactor` (status bar playback quality).
+ * Independent of program monitor zoom so ½ / ¼ / ⅛ always reduce decoder load.
+ */
+export function programVideoDecodeSize(
+  sequenceWidth: number,
+  sequenceHeight: number,
+  mediaWidth: number,
+  mediaHeight: number,
   decodeFactor: number,
 ): { width: number; height: number } {
-  if (mediaWidth <= 0 || mediaHeight <= 0) {
-    return { width: 2, height: 2 };
-  }
-  const byMedia = {
-    w: mediaWidth * decodeFactor,
-    h: mediaHeight * decodeFactor,
-  };
-  const byDisplay = {
-    w: Math.max(displayWidth, 1) * decodeFactor,
-    h: Math.max(displayHeight, 1) * decodeFactor,
-  };
+  const frameW = Math.max(1, sequenceWidth);
+  const frameH = Math.max(1, sequenceHeight);
+  const box =
+    mediaWidth > 0 && mediaHeight > 0
+      ? letterboxMediaSize(frameW, frameH, mediaWidth, mediaHeight)
+      : { width: frameW, height: frameH };
   return {
-    width: Math.max(2, Math.round(Math.min(byMedia.w, byDisplay.w))),
-    height: Math.max(2, Math.round(Math.min(byMedia.h, byDisplay.h))),
+    width: Math.max(2, Math.round(box.width * decodeFactor)),
+    height: Math.max(2, Math.round(box.height * decodeFactor)),
   };
 }
