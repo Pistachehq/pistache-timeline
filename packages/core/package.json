@@ -1,0 +1,26 @@
+{
+  "name": "@timeline/core",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Platform-independent project model, editing operations, history and serialization for Timeline.",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@timeline/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@timeline/config": "workspace:*",
+    "eslint": "10.12.0",
+    "typescript": "6.0.3",
+    "vitest": "5.0.3"
+  }
+}

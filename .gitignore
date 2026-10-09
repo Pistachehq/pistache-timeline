@@ -147,3 +147,17 @@ vite.config.ts.timestamp-*
 
 # Turbo Repo
 .turbo
+
+# Electron
+dist-electron
+release
+
+# Playwright
+playwright-report
+test-results
+blob-report
+
+# Editors / OS
+.DS_Store
+Thumbs.db
+.idea

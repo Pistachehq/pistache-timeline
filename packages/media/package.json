@@ -1,0 +1,28 @@
+{
+  "name": "@timeline/media",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Platform-independent media engine interfaces with browser and desktop adapters.",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@timeline/core": "workspace:*",
+    "@timeline/shared": "workspace:*",
+    "webm-muxer": "5.1.4"
+  },
+  "devDependencies": {
+    "@timeline/config": "workspace:*",
+    "eslint": "10.12.0",
+    "typescript": "6.0.3",
+    "vitest": "5.0.3"
+  }
+}
