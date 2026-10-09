@@ -18,10 +18,14 @@ import { clipSpeedPercent, sourceFramesForTimeline, timelineFrameCount } from '.
 import { DEFAULT_CLIP_TEXT, TEXT_CLIP_MAX_SOURCE_FRAMES, textClipName, type ClipText } from '../model/text';
 import {
   findTrack,
+  clipStartFloor,
+  clipStartTrim,
+  clipStartTrimBounds,
   getAssetFrameCount,
   getClipDuration,
   getClipEnd,
   getMaxClipSourceOutFrames,
+  isStillImageAsset,
 } from '../model/queries';
 import {
   type Clip,
@@ -377,31 +381,35 @@ function trimClipInSequence(
   edge: 'start' | 'end',
   frame: number,
   maxSourceOutFrames: number,
+  extendStart: boolean,
 ): Result<Sequence, TimelineError> {
   const clip = sequence.clips[clipId];
   if (!clip) return fail('NOT_FOUND', `Clip ${clipId} does not exist.`);
   const track = findTrack(sequence, clip.trackId);
   if (track?.locked) return fail('LOCKED', `Track ${track.name} is locked.`);
-  const end = getClipEnd(clip);
   const trimFrame = Math.round(frame);
   if (!Number.isFinite(trimFrame)) return fail('INVALID_ARGUMENT', 'Trim frame must be an integer.');
 
   let next: Clip;
   if (edge === 'start') {
-    const minStart = Math.max(0, clip.start - timelineFrameCount(clip.sourceIn, clip.speed));
-    if (trimFrame < minStart || trimFrame > end - MIN_CLIP_DURATION_FRAMES) {
+    const bounds = clipStartTrimBounds(clip, maxSourceOutFrames, extendStart);
+    const minStart = Math.min(bounds.max, Math.max(bounds.min, clipStartFloor(sequence, clip)));
+    if (trimFrame < minStart || trimFrame > bounds.max) {
       return fail('INVALID_ARGUMENT', 'Trim start must stay inside the clip and media bounds.');
     }
-    const delta = trimFrame - clip.start;
-    const sourceIn = clip.sourceIn + sourceFramesForTimeline(delta, clip.speed);
-    if (sourceIn < 0 || sourceIn >= clip.sourceOut) {
-      return fail('INVALID_ARGUMENT', 'Trim start exceeds the media duration.');
-    }
+    const points = clipStartTrim(clip, trimFrame, maxSourceOutFrames, extendStart);
+    if (!points) return fail('INVALID_ARGUMENT', 'Trim start exceeds the media duration.');
+    const delta = points.start - clip.start;
     next = {
       ...clip,
-      start: trimFrame,
-      sourceIn,
-      animation: refitClipAnimation(clip.animation ?? {}, delta, timelineFrameCount(clip.sourceOut - sourceIn, clip.speed)),
+      start: points.start,
+      sourceIn: points.sourceIn,
+      sourceOut: points.sourceOut,
+      animation: refitClipAnimation(
+        clip.animation ?? {},
+        delta,
+        timelineFrameCount(points.sourceOut - points.sourceIn, clip.speed),
+      ),
     };
   } else {
     const minEnd = clip.start + MIN_CLIP_DURATION_FRAMES;
@@ -436,8 +444,9 @@ export function trimClip(project: Project, input: TrimClipInput): EditResult {
     const asset = clip.assetId ? project.mediaAssets[clip.assetId] : undefined;
     if (!clip.text && !asset) return fail('NOT_FOUND', 'Media for this clip is missing.');
     const maxSourceOut = clip.text ? TEXT_CLIP_MAX_SOURCE_FRAMES : getMaxClipSourceOutFrames(asset!, sequence);
+    const extendStart = asset ? isStillImageAsset(asset) : false;
 
-    const first = trimClipInSequence(sequence, input.clipId, input.edge, input.frame, maxSourceOut);
+    const first = trimClipInSequence(sequence, input.clipId, input.edge, input.frame, maxSourceOut, extendStart);
     if (!first.ok) return first;
 
     let next = first.value;
@@ -451,7 +460,15 @@ export function trimClip(project: Project, input: TrimClipInput): EditResult {
           : partnerAsset
             ? getMaxClipSourceOutFrames(partnerAsset, sequence)
             : maxSourceOut;
-        const second = trimClipInSequence(next, partnerId, input.edge, input.frame, partnerMaxSourceOut);
+        const partnerExtends = partnerAsset ? isStillImageAsset(partnerAsset) : false;
+        const second = trimClipInSequence(
+          next,
+          partnerId,
+          input.edge,
+          input.frame,
+          partnerMaxSourceOut,
+          partnerExtends,
+        );
         if (!second.ok) return second;
         next = second.value;
       }

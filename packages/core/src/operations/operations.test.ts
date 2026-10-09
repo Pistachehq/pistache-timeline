@@ -180,6 +180,40 @@ describe('splitClip and removeClips', () => {
     expect(getClipEnd(extended.clips[CLIP_A]!)).toBe(600);
   });
 
+  it('extends a still image to the left without moving its end', () => {
+    const image = imageAsset();
+    const project = unwrap(addMediaAssets(createProject({ now: new Date('2026-01-01T00:00:00Z') }), [image]));
+    const sequence = activeSequence(project);
+    const v1 = sequence.videoTracks[0]!.id;
+    const withClip = unwrap(
+      addClip(project, { sequenceId: sequence.id, trackId: v1, assetId: image.id, start: 90, clipId: CLIP_A }),
+    );
+    const before = activeSequence(withClip).clips[CLIP_A]!;
+    const end = getClipEnd(before);
+
+    const extended = activeSequence(
+      unwrap(trimClip(withClip, { sequenceId: sequence.id, clipId: CLIP_A, edge: 'start', frame: 30 })),
+    );
+    const clip = extended.clips[CLIP_A]!;
+    expect(clip.start).toBe(30);
+    expect(clip.sourceIn).toBe(0);
+    expect(clip.sourceOut).toBe(before.sourceOut + 60);
+    expect(getClipEnd(clip)).toBe(end);
+
+    const blocked = trimClip(withClip, { sequenceId: sequence.id, clipId: CLIP_A, edge: 'start', frame: -5 });
+    expect(blocked.ok).toBe(false);
+  });
+
+  it('does not extend a video start past the beginning of the file', () => {
+    const { project, v1 } = withClip();
+    const sequence = activeSequence(project);
+    const moved = unwrap(moveClip(project, { sequenceId: sequence.id, clipId: CLIP_A, trackId: v1, start: 50 }));
+    const before = activeSequence(moved).clips[CLIP_A]!;
+    expect(before.sourceIn).toBe(0);
+    const trimmed = trimClip(moved, { sequenceId: sequence.id, clipId: CLIP_A, edge: 'start', frame: 10 });
+    expect(trimmed.ok).toBe(false);
+  });
+
   it('drops transitions on new cut edges when splitting', () => {
     const { project } = withClip();
     const sequence = activeSequence(project);

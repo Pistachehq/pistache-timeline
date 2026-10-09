@@ -1,5 +1,5 @@
 import { MAX_STILL_IMAGE_TIMELINE_SECONDS } from './defaults';
-import { timelineFrameCount } from './speed';
+import { sourceFramesForTimeline, timelineFrameCount } from './speed';
 import { isCrossDissolveTransition } from './transition-resolve';
 import { mediaTimeToFrames, secondsToFrames } from '../time/rational';
 import {
@@ -138,6 +138,69 @@ export function getMaxClipSourceOutFrames(asset: MediaAsset, sequence: Sequence)
     return secondsToFrames(MAX_STILL_IMAGE_TIMELINE_SECONDS, sequence.frameRate, 'floor');
   }
   return getAssetFrameCount(asset, sequence);
+}
+
+export interface ClipEdgeTrim {
+  readonly start: number;
+  readonly sourceIn: number;
+  readonly sourceOut: number;
+}
+
+/**
+ * Sequence frames the start handle can reach. A still may grow past source
+ * frame 0; video and audio stop where the file starts.
+ */
+export function clipStartTrimBounds(
+  clip: Clip,
+  maxSourceOutFrames: number,
+  extendStart: boolean,
+): { readonly min: number; readonly max: number } {
+  const head = timelineFrameCount(clip.sourceIn, clip.speed);
+  let min = Math.max(0, clip.start - head);
+  if (extendStart) {
+    const room = Math.max(0, maxSourceOutFrames - clip.sourceOut);
+    min = Math.max(0, min - timelineFrameCount(room, clip.speed));
+  }
+  return { min, max: Math.max(min, getClipEnd(clip) - 1) };
+}
+
+/** End of the previous clip on the same track, or 0 when the track is empty ahead. */
+export function clipStartFloor(sequence: Sequence, clip: Clip): number {
+  const track = findTrack(sequence, clip.trackId);
+  if (!track) return 0;
+  let floor = 0;
+  for (const id of track.clipIds) {
+    const other = sequence.clips[id];
+    if (!other || other.id === clip.id || other.start >= clip.start) continue;
+    floor = Math.max(floor, getClipEnd(other));
+  }
+  return floor;
+}
+
+/**
+ * New source range for a start-handle trim. Stills that move left of the
+ * first source frame keep `sourceIn` at 0 and grow `sourceOut`, so the
+ * timeline end stays put and the still simply lasts longer.
+ */
+export function clipStartTrim(
+  clip: Clip,
+  trimFrame: number,
+  maxSourceOutFrames: number,
+  extendStart: boolean,
+): ClipEdgeTrim | null {
+  const bounds = clipStartTrimBounds(clip, maxSourceOutFrames, extendStart);
+  const start = Math.round(trimFrame);
+  if (start < bounds.min || start > bounds.max) return null;
+  const sourceDelta = sourceFramesForTimeline(start - clip.start, clip.speed);
+  let sourceIn = clip.sourceIn + sourceDelta;
+  let sourceOut = clip.sourceOut;
+  if (extendStart && sourceIn < 0) {
+    sourceOut = clip.sourceOut - sourceIn;
+    sourceIn = 0;
+  }
+  if (sourceOut > maxSourceOutFrames) return null;
+  if (sourceIn < 0 || sourceIn >= sourceOut) return null;
+  return { start, sourceIn, sourceOut };
 }
 
 /**
