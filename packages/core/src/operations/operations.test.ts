@@ -17,7 +17,7 @@ import {
 } from './clips';
 import { updateClipTransitions } from './clip-effects';
 import { addMediaAssets, removeMediaAsset } from './media';
-import { addTrack, updateTrack } from './tracks';
+import { addTrack, removeTrack, updateTrack } from './tracks';
 
 const CLIP_A = 'clip_a' as ClipId;
 const CLIP_B = 'clip_b' as ClipId;
@@ -350,6 +350,44 @@ describe('tracks', () => {
     const { project, sequence } = setupProject();
     const next = activeSequence(unwrap(addTrack(project, { sequenceId: sequence.id, kind: 'video' })));
     expect(next.videoTracks.map((t) => t.name)).toEqual(['V1', 'V2', 'V3', 'V4']);
+  });
+
+  it('deletes empty tracks from the fourth onward and keeps the base three', () => {
+    const { project, sequence, video } = setupProject();
+    const withExtra = unwrap(
+      addTrack(unwrap(addTrack(project, { sequenceId: sequence.id, kind: 'video' })), {
+        sequenceId: sequence.id,
+        kind: 'video',
+      }),
+    );
+    const tracks = activeSequence(withExtra).videoTracks;
+    expect(tracks.map((track) => track.name)).toEqual(['V1', 'V2', 'V3', 'V4', 'V5']);
+    expect(removeTrack(withExtra, { sequenceId: sequence.id, trackId: tracks[0]!.id }).ok).toBe(false);
+    expect(removeTrack(withExtra, { sequenceId: sequence.id, trackId: tracks[2]!.id }).ok).toBe(false);
+
+    const occupied = unwrap(
+      addClip(withExtra, {
+        sequenceId: sequence.id,
+        trackId: tracks[3]!.id,
+        assetId: video.id,
+        start: 0,
+      }),
+    );
+    expect(removeTrack(occupied, { sequenceId: sequence.id, trackId: tracks[3]!.id }).ok).toBe(false);
+
+    const afterV4 = unwrap(removeTrack(withExtra, { sequenceId: sequence.id, trackId: tracks[3]!.id }));
+    const withoutV4 = activeSequence(afterV4);
+    expect(withoutV4.videoTracks.map((track) => track.name)).toEqual(['V1', 'V2', 'V3', 'V5']);
+    const v5 = withoutV4.videoTracks[3]!;
+    const afterV5 = unwrap(removeTrack(afterV4, { sequenceId: sequence.id, trackId: v5.id }));
+    expect(activeSequence(afterV5).videoTracks.map((track) => track.name)).toEqual(['V1', 'V2', 'V3']);
+
+    const withA4 = unwrap(addTrack(project, { sequenceId: sequence.id, kind: 'audio' }));
+    const a4 = activeSequence(withA4).audioTracks[3]!;
+    const afterA4 = unwrap(removeTrack(withA4, { sequenceId: sequence.id, trackId: a4.id }));
+    expect(activeSequence(afterA4).audioTracks.map((track) => track.name)).toEqual(['A1', 'A2', 'A3']);
+    expect(validateProjectInvariants(afterV5)).toEqual([]);
+    expect(validateProjectInvariants(afterA4)).toEqual([]);
   });
 
   it('hidden tracks are skipped when resolving the program clip', () => {

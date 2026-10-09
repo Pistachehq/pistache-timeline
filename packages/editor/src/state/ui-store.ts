@@ -140,6 +140,8 @@ export interface UiState {
   readonly textEditingClipId: ClipId | null;
   /** Folder/asset ids playing a short enter animation in the media bin. */
   readonly mediaBinPopInIds: readonly string[];
+  /** Audio track currently recording a voice over, if any. */
+  readonly voiceOverTrackId: TrackId | null;
   setTool(tool: EditTool): void;
   setZoom(pixelsPerFrame: number): void;
   setProgramScale(scale: MonitorScale): void;
@@ -170,6 +172,7 @@ export interface UiState {
   setClipBlurEditId(clipId: ClipId | null): void;
   setTextEditingClipId(clipId: ClipId | null): void;
   flashMediaBinPopIn(ids: readonly string[]): void;
+  setVoiceOverTrackId(trackId: TrackId | null): void;
 }
 
 export type UiStore = StoreApi<UiState>;
@@ -203,6 +206,7 @@ export function createUiStore(): UiStore {
     clipBlurEditId: null,
     textEditingClipId: null,
     mediaBinPopInIds: [],
+    voiceOverTrackId: null,
 
     setTool: (tool) => set({ tool }),
     setZoom: (pixelsPerFrame) => set({ pixelsPerFrame: clampZoom(pixelsPerFrame) }),
@@ -286,6 +290,8 @@ export function createUiStore(): UiStore {
     setClipBlurEditId: (clipBlurEditId) =>
       set({ clipBlurEditId, clipCropEditId: clipBlurEditId ? null : get().clipCropEditId }),
     setTextEditingClipId: (textEditingClipId) => set({ textEditingClipId }),
+
+    setVoiceOverTrackId: (voiceOverTrackId) => set({ voiceOverTrackId }),
 
     flashMediaBinPopIn(ids) {
       const unique = [...new Set(ids.filter(Boolean))];

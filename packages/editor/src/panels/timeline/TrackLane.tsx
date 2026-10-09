@@ -106,8 +106,12 @@ export const TrackLane = memo(function TrackLane({
     !track.locked && isOsFileDrag(event.dataTransfer);
 
   const acceptsAssetDrag = (event: DragEvent<HTMLDivElement>): boolean => {
-    if (track.locked || !event.dataTransfer.types.includes(ASSET_DRAG_TYPE)) return false;
-    const assetId = runtime.stores.ui.getState().assetDrag;
+    if (track.locked) return false;
+    const dragging = runtime.stores.ui.getState().assetDrag;
+    const types = event.dataTransfer?.types;
+    const listed = types ? Array.from(types).includes(ASSET_DRAG_TYPE) : false;
+    if (!dragging && !listed) return false;
+    const assetId = dragging;
     const asset = assetId ? runtime.stores.project.getState().project.mediaAssets[assetId] : undefined;
     return (
       !!asset &&
@@ -259,7 +263,7 @@ export const TrackLane = memo(function TrackLane({
           return;
         }
 
-        const assetId = event.dataTransfer.getData(ASSET_DRAG_TYPE);
+        const assetId = event.dataTransfer.getData(ASSET_DRAG_TYPE) || runtime.stores.ui.getState().assetDrag || '';
         if (!assetId || !acceptsAssetDrag(event)) return;
         event.preventDefault();
         runtime.actions.edit.placeAssetOnTrack(assetId as MediaAssetId, track.id, frame);

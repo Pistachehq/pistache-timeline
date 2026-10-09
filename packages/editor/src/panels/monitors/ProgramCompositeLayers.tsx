@@ -41,6 +41,7 @@ import {
   programLayerLive,
   programPictureKey,
   programPictureLayers,
+  programVideoUnready,
   type ProgramLayerRole,
   type ProgramPictureLayer,
 } from './program-clip-layout';
@@ -59,7 +60,33 @@ type LayerRegistry = Map<ClipId, HTMLElement>;
 
 const lastSeekAt = new WeakMap<HTMLVideoElement, number>();
 const pendingSeek = new Map<HTMLVideoElement, { seconds: number; smooth: boolean }>();
+const presentedFrames = new WeakSet<HTMLVideoElement>();
 let flushTimer = 0;
+let repaintAfterSeek: (() => void) | null = null;
+
+function videoHasPicture(el: HTMLVideoElement | undefined): boolean {
+  if (!el) return false;
+  if (el.readyState >= 2) {
+    presentedFrames.add(el);
+    return true;
+  }
+  return presentedFrames.has(el);
+}
+
+/** Copies the decoded frame. The video element itself stays black while paused under a CSS transform. */
+function drawVideoFrame(video: HTMLVideoElement, canvas: HTMLCanvasElement): boolean {
+  const w = video.videoWidth;
+  const h = video.videoHeight;
+  if (w <= 0 || h <= 0 || video.readyState < 2) return false;
+  if (canvas.width !== w || canvas.height !== h) {
+    canvas.width = w;
+    canvas.height = h;
+  }
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return false;
+  ctx.drawImage(video, 0, 0, w, h);
+  return true;
+}
 
 function applySeek(el: HTMLVideoElement, seconds: number, smooth: boolean): void {
   if (smooth && typeof el.fastSeek === 'function' && el.readyState >= 2) el.fastSeek(seconds);
@@ -144,6 +171,80 @@ function syncStackVideos(
   }
 }
 
+function ProgramVideoSurface({
+  videoRef,
+  playing,
+  decodeW,
+  decodeH,
+  className,
+}: {
+  readonly videoRef: (node: HTMLVideoElement | null) => void;
+  readonly playing: boolean;
+  readonly decodeW: number;
+  readonly decodeH: number;
+  readonly className: string;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const videoNode = useRef<HTMLVideoElement | null>(null);
+  const playingRef = useRef(playing);
+  playingRef.current = playing;
+
+  const bind = useCallback(
+    (node: HTMLVideoElement | null) => {
+      videoNode.current = node;
+      videoRef(node);
+    },
+    [videoRef],
+  );
+
+  useLayoutEffect(() => {
+    const video = videoNode.current;
+    const canvas = canvasRef.current;
+    if (!video || !canvas) return;
+    const publish = () => {
+      if (playingRef.current || video.readyState < 2) return;
+      if (!drawVideoFrame(video, canvas)) return;
+      presentedFrames.add(video);
+      repaintAfterSeek?.();
+    };
+    const onPresented = () => {
+      if (playingRef.current || video.seeking) return;
+      publish();
+      if (typeof video.requestVideoFrameCallback === 'function') {
+        video.requestVideoFrameCallback(() => {
+          if (playingRef.current || video.seeking) return;
+          publish();
+        });
+      }
+    };
+    video.addEventListener('seeked', onPresented);
+    video.addEventListener('loadeddata', onPresented);
+    if (!playing && video.readyState >= 2 && !video.seeking) publish();
+    return () => {
+      video.removeEventListener('seeked', onPresented);
+      video.removeEventListener('loadeddata', onPresented);
+    };
+  }, [playing, decodeH, decodeW]);
+
+  return (
+    <div className="relative h-full w-full">
+      <video
+        ref={bind}
+        muted
+        playsInline
+        preload="auto"
+        width={decodeW}
+        height={decodeH}
+        className={playing ? className : `${className} opacity-0`}
+      />
+      <canvas
+        ref={canvasRef}
+        className={playing ? 'hidden' : 'pointer-events-none absolute inset-0 h-full w-full object-fill'}
+      />
+    </div>
+  );
+}
+
 interface LayerProps {
   readonly clip: Clip;
   readonly sequence: Sequence;
@@ -174,8 +275,13 @@ function CompositeLayer({
   const asset = useProjectState((s) => (assetId ? s.project.mediaAssets[assetId] : undefined));
   const entry = useMediaState((s) => (assetId ? s.entries[assetId] : undefined));
   const selected = useSelectionState((s) => s.clipIds.includes(clip.id));
+  const playing = usePlaybackState((s) => s.playing);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const blurCopyRef = useRef<HTMLVideoElement | null>(null);
+  const playheadRef = useRef(playhead);
+  playheadRef.current = playhead;
+  const playingRef = useRef(playing);
+  playingRef.current = playing;
   const blurEffect = getBlurVideoEffect(clip.effects.video);
   const regionalBlur = blurEffect && blurEffect.region && isRegionalBlurEffect(blurEffect) ? blurEffect : null;
   const url = entry?.status === 'online' && entry.handle ? entry.handle.url : null;
@@ -202,6 +308,10 @@ function CompositeLayer({
     [clip.id, registerVideo],
   );
 
+  const bindBlurVideo = useCallback((node: HTMLVideoElement | null) => {
+    blurCopyRef.current = node;
+  }, []);
+
   useEffect(() => {
     const el = videoRef.current;
     if (!el || isImage || !url) return;
@@ -210,10 +320,15 @@ function CompositeLayer({
     el.preload = 'auto';
     if (el.getAttribute('src') !== url) el.src = url;
     const park = () => {
-      if (role !== 'active') {
-        const atFrame = role === 'recent' ? Math.max(clip.start, getClipEnd(clip) - 1) : clip.start;
+      if (role !== 'active' || !playingRef.current) {
+        const atFrame =
+          role === 'active'
+            ? playheadRef.current
+            : role === 'recent'
+              ? Math.max(clip.start, getClipEnd(clip) - 1)
+              : clip.start;
         const at = sourceTimeForFrame(clip, atFrame, sequence.frameRate);
-        if (Number.isFinite(el.currentTime) && Math.abs(el.currentTime - at) > PAUSED_EPSILON) el.currentTime = at;
+        if (Number.isFinite(at) && Math.abs(el.currentTime - at) > PAUSED_EPSILON) el.currentTime = at;
       }
       if (el.readyState >= 2) onDecoded();
     };
@@ -268,26 +383,22 @@ function CompositeLayer({
 
   const imageEl = <img src={url} alt="" draggable={false} className={mediaClass} decoding="async" />;
   const videoEl = (
-    <video
-      ref={bindVideo}
-      muted
-      playsInline
-      preload="auto"
+    <ProgramVideoSurface
+      videoRef={bindVideo}
+      playing={playing}
+      decodeW={decodeW}
+      decodeH={decodeH}
       className={mediaClass}
-      width={decodeW}
-      height={decodeH}
     />
   );
   const imageCopy = <img src={url} alt="" draggable={false} className={mediaClass} decoding="async" />;
   const videoCopy = (
-    <video
-      ref={blurCopyRef}
-      muted
-      playsInline
-      preload="auto"
+    <ProgramVideoSurface
+      videoRef={bindBlurVideo}
+      playing={playing}
+      decodeW={decodeW}
+      decodeH={decodeH}
       className={mediaClass}
-      width={decodeW}
-      height={decodeH}
     />
   );
 
@@ -375,7 +486,7 @@ function videoWaiting(
     const asset = assets[layer.clip.assetId];
     if (!asset || asset.kind === 'image' || !asset.hasVideo) continue;
     const el = videos.get(layer.clip.id);
-    if (!el || el.readyState < 2) return true;
+    if (!el || programVideoUnready(el.readyState, videoHasPicture(el))) return true;
   }
   return false;
 }
@@ -398,12 +509,13 @@ function paintPicture(
     if (!el) continue;
     const live = programLayerLive(layer, playhead);
     const asset = layer.clip.assetId ? assets[layer.clip.assetId] : undefined;
+    const video = videos.get(layer.clip.id);
     const unready =
       live &&
       !!asset &&
       asset.kind !== 'image' &&
       asset.hasVideo &&
-      (videos.get(layer.clip.id)?.readyState ?? 0) < 2;
+      programVideoUnready(video?.readyState ?? 0, videoHasPicture(video));
     const hold = waiting && !live && layer.role === 'recent';
     const box = letterboxMediaSize(frameW, frameH, asset?.resolution?.width ?? 0, asset?.resolution?.height ?? 0);
     const sample = hold ? Math.max(layer.clip.start, getClipEnd(layer.clip) - 1) : playhead;
@@ -480,6 +592,13 @@ export function ProgramCompositeLayers({ sequence }: { readonly sequence: Sequen
       videoRegistry.current,
     );
   }, [runtime]);
+
+  useLayoutEffect(() => {
+    repaintAfterSeek = paintNow;
+    return () => {
+      if (repaintAfterSeek === paintNow) repaintAfterSeek = null;
+    };
+  }, [paintNow]);
 
   useLayoutEffect(() => {
     syncVideos(pictureFrame, playing);

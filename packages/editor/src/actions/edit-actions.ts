@@ -25,6 +25,7 @@ import {
   newClipId,
   type Project,
   removeClips,
+  removeTrack as removeTrackOp,
   renameProject,
   type Sequence,
   resetMotionChannel,
@@ -54,6 +55,8 @@ import { type EffectLibraryPayload } from '../panels/dnd';
 import { applyEffectPayloadToClip } from '../panels/project/apply-effect-payload';
 import { type AutoCreateTrackKind } from '../state/ui-store';
 import { currentSequence, type EditorServices } from '../runtime/services';
+import { type MediaActions } from './media-actions';
+import { createVoiceOver } from './voice-over';
 
 type ClipMovePreview = { readonly clipId: ClipId; readonly trackId: TrackId; readonly start: number };
 
@@ -140,7 +143,7 @@ function chain(project: Project, steps: readonly ((p: Project) => EditResult)[])
  * user intent onto one or more core operations and records a single,
  * labelled undo step.
  */
-export function createEditActions(services: EditorServices) {
+export function createEditActions(services: EditorServices, media: MediaActions) {
   const { project: projectStore, selection, ui, playback } = services.stores;
 
   /** Runs an edit against the active sequence and reports failures in the status bar. */
@@ -247,6 +250,11 @@ export function createEditActions(services: EditorServices) {
     selection.getState().selectClips([clipId]);
     return clipId;
   };
+
+  const voiceOver = createVoiceOver(services, {
+    importRecording: async (file) => (await media.importLocalFiles([file], { quiet: true }))[0] ?? null,
+    placeRecording: (assetId, trackId, start) => placeClip(assetId, trackId, start, 'Record Voice Over') !== null,
+  });
 
   return {
     /** Inserts the full asset at the playhead on the first suitable unlocked track. */
@@ -632,6 +640,19 @@ export function createEditActions(services: EditorServices) {
       return run(kind === 'video' ? 'Add Video Track' : 'Add Audio Track', (project, sequence) =>
         addTrack(project, { sequenceId: sequence.id, kind }),
       );
+    },
+
+    removeTrack(trackId: TrackId): boolean {
+      if (services.stores.ui.getState().voiceOverTrackId === trackId) voiceOver.cancel();
+      return run('Delete Track', (project, sequence) => removeTrackOp(project, { sequenceId: sequence.id, trackId }));
+    },
+
+    toggleVoiceOver(trackId: TrackId): Promise<void> {
+      return voiceOver.toggle(trackId);
+    },
+
+    cancelVoiceOver(): void {
+      voiceOver.cancel();
     },
 
     renameProject(name: string): boolean {

@@ -96,6 +96,7 @@ export function createMediaActions(services: EditorServices) {
     pickedFiles: readonly PickedMedia[],
     initialFailures: readonly string[],
     undoLabel: string,
+    quiet = false,
   ): Promise<MediaAsset[]> => {
     const failures = [...initialFailures];
     if (pickedFiles.length === 0 && failures.length === 0) return [];
@@ -138,7 +139,7 @@ export function createMediaActions(services: EditorServices) {
     if (failures.length > 0) {
       const importedCount = assets.length > 0 ? `Imported ${assets.length}; ` : '';
       ui.getState().notify(`${importedCount}could not import ${failures.join('; ')}`, 'warning');
-    } else if (assets.length > 0) {
+    } else if (assets.length > 0 && !quiet) {
       ui.getState().notify(`Imported ${assets.length} file${assets.length === 1 ? '' : 's'}.`, 'success');
     }
     return assets;
@@ -178,15 +179,16 @@ export function createMediaActions(services: EditorServices) {
     },
 
     /** Imports files from drag-and-drop (Explorer/Finder → project or timeline). */
-    async importLocalFiles(files: readonly File[]): Promise<MediaAsset[]> {
+    async importLocalFiles(files: readonly File[], options?: { readonly quiet?: boolean }): Promise<MediaAsset[]> {
       if (files.length === 0) return [];
       try {
         const result = await engine.importLocalFiles(files);
-        const label = result.files.length > 1 ? 'Import Media' : 'Import File';
+        const label = options?.quiet ? 'Import Voice Over' : result.files.length > 1 ? 'Import Media' : 'Import File';
         return importPickedFiles(
           result.files,
           result.rejected.map((r) => `${r.fileName}: ${r.reason}`),
           label,
+          options?.quiet === true,
         );
       } catch (error) {
         ui.getState().notify(`Could not import files: ${toErrorMessage(error)}`, 'error');

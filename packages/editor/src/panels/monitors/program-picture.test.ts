@@ -10,7 +10,7 @@ import {
 } from '@timeline/core';
 import { unwrap } from '@timeline/shared';
 import { describe, expect, it } from 'vitest';
-import { programLayerLive, programPictureLayers } from './program-clip-layout';
+import { programLayerLive, programPictureLayers, programVideoUnready } from './program-clip-layout';
 
 function sequenceWithTwoClips() {
   const asset = createMediaAsset({
@@ -79,5 +79,13 @@ describe('programPictureLayers', () => {
     if (!warmed) throw new Error('missing warm clip');
     expect(programLayerLive(warmed, 29)).toBe(false);
     expect(programLayerLive(warmed, 30)).toBe(true);
+  });
+});
+
+describe('programVideoUnready', () => {
+  it('hides a video only until its first frame, not during a later seek', () => {
+    expect(programVideoUnready(1, false)).toBe(true);
+    expect(programVideoUnready(2, false)).toBe(false);
+    expect(programVideoUnready(1, true)).toBe(false);
   });
 });

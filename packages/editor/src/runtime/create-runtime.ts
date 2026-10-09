@@ -52,7 +52,7 @@ export function createEditorRuntime(
   const actions = {
     project: createProjectActions(services, media),
     media,
-    edit: createEditActions(services),
+    edit: createEditActions(services, media),
     playback: createPlaybackActions(services),
   };
 
@@ -79,6 +79,7 @@ export function createEditorRuntime(
     stores,
     actions,
     dispose() {
+      actions.edit.cancelVoiceOver();
       for (const unsubscribe of unsubscribers) unsubscribe();
       media.releaseAll();
       platform.media.dispose();

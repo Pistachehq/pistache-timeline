@@ -1,5 +1,5 @@
 import { frameRateFromNumber, type MediaKind, type MediaSourceRef } from '@timeline/core';
-import { type DesktopMediaFile, type TimelineDesktopApi } from '@timeline/shared';
+import { createId, type DesktopMediaFile, type TimelineDesktopApi } from '@timeline/shared';
 import { MediaElementPlayer } from '../browser/media-element-player';
 import { captureImageThumbnail } from '../browser/image-thumbnail';
 import { probeImage } from '../browser/probe-image';
@@ -29,6 +29,7 @@ function toHandle(file: DesktopMediaFile): MediaHandle {
  */
 export function createDesktopMediaEngine(bridge: DesktopMediaBridge): MediaEngine {
   const handles = new Set<string>();
+  const blobUrls = new Map<string, string>();
 
   const track = (file: DesktopMediaFile): MediaHandle => {
     handles.add(file.token);
@@ -90,7 +91,28 @@ export function createDesktopMediaEngine(bridge: DesktopMediaBridge): MediaEngin
         }
         const path = (file as File & { path?: string }).path;
         if (!path) {
-          rejected.push({ fileName: file.name, reason: 'Could not read the file path.' });
+          const blobKind = detectMediaKind(file.name, file.type || mimeType);
+          if (!blobKind) {
+            rejected.push({ fileName: file.name, reason: 'Unsupported file type.' });
+            continue;
+          }
+          const id = createId('media');
+          const url = URL.createObjectURL(file);
+          blobUrls.set(id, url);
+          handles.add(id);
+          picked.push({
+            handle: { id, url },
+            kind: blobKind,
+            source: {
+              kind: 'local-file',
+              fileName: file.name,
+              size: file.size,
+              lastModified: file.lastModified,
+              mimeType: file.type || mimeType,
+              path: null,
+            },
+            binPath: [],
+          });
           continue;
         }
         const desktopFile = await bridge.resolve(path);
@@ -123,6 +145,7 @@ export function createDesktopMediaEngine(bridge: DesktopMediaBridge): MediaEngin
 
     async probe(handle: MediaHandle, kind: MediaKind, signal?: AbortSignal): Promise<MediaMetadata> {
       if (kind === 'image') return probeImage(handle, signal);
+      if (handle.url.startsWith('blob:')) return probeWithMediaElement(handle, kind, signal);
       const result = await bridge.probe(handle.id).catch(() => null);
       if (!result?.durationSeconds) return probeWithMediaElement(handle, kind, signal);
       if (kind === 'video' && !result.hasVideo) return probeWithMediaElement(handle, kind, signal);
@@ -158,12 +181,23 @@ export function createDesktopMediaEngine(bridge: DesktopMediaBridge): MediaEngin
 
     release(handle) {
       if (!handles.delete(handle.id)) return;
+      const url = blobUrls.get(handle.id);
+      if (url) {
+        URL.revokeObjectURL(url);
+        blobUrls.delete(handle.id);
+        return;
+      }
       void bridge.release(handle.id);
     },
 
     dispose() {
-      for (const token of handles) void bridge.release(token);
+      for (const token of handles) {
+        const url = blobUrls.get(token);
+        if (url) URL.revokeObjectURL(url);
+        else void bridge.release(token);
+      }
       handles.clear();
+      blobUrls.clear();
     },
   };
   return engine;

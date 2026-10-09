@@ -194,6 +194,15 @@ export function programPictureKey(sequence: Sequence, frame: number): string {
     .join('|');
 }
 
+/**
+ * True while a video has not decoded a frame yet.
+ * A seek drops `readyState` below 2; once a frame has been shown, hiding the
+ * layer for that dip paints the black program background.
+ */
+export function programVideoUnready(readyState: number, hasPresentedFrame: boolean): boolean {
+  return readyState < 2 && !hasPresentedFrame;
+}
+
 /** Whether this mounted layer should be visible at `playhead`, including the frame a cut lands. */
 export function programLayerLive(layer: ProgramPictureLayer, playhead: number): boolean {
   const { clip } = layer;
