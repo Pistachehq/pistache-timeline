@@ -1,0 +1,6 @@
+@import 'tailwindcss';
+@import '@timeline/ui/theme.css';
+
+@source "../../../packages/editor/src";
+@source "../../../packages/ui/src";
+@source "./**/*.{ts,tsx}";

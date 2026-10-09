@@ -1,0 +1,185 @@
+/*
+ * Timeline design tokens (Tailwind CSS v4 theme variables).
+ * Applications import this file after `@import "tailwindcss";`.
+ */
+
+@theme {
+  --font-sans: 'Inter', 'Segoe UI Variable', 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', sans-serif;
+  --font-mono: 'JetBrains Mono', 'Cascadia Mono', 'SF Mono', ui-monospace, Menlo, Consolas, monospace;
+
+  --text-2xs: 10px;
+  --text-2xs--line-height: 14px;
+  --text-xs: 11px;
+  --text-xs--line-height: 16px;
+  --text-sm: 12px;
+  --text-sm--line-height: 18px;
+  --text-base: 13px;
+  --text-base--line-height: 20px;
+
+  /* Surfaces, from the app background up to raised controls. */
+  --color-surface-0: #121214;
+  --color-surface-1: #19191c;
+  --color-surface-2: #1f1f23;
+  --color-surface-3: #27272c;
+  --color-surface-4: #303036;
+  --color-surface-5: #3a3a41;
+
+  --color-line: #2a2a30;
+  --color-line-strong: #3a3a42;
+
+  --color-fg: #e6e6ea;
+  --color-fg-muted: #a3a3ad;
+  --color-fg-subtle: #6f6f7a;
+  --color-fg-disabled: #4f4f58;
+
+  --color-accent: #3d8bfd;
+  --color-accent-hover: #5a9cff;
+  --color-accent-muted: #3d8bfd33;
+  --color-accent-fg: #ffffff;
+
+  --color-playhead: #4c9bff;
+  --color-clip-video: #5b5bd6;
+  --color-clip-video-strong: #7373e6;
+  --color-clip-audio: #2f9e6b;
+  --color-clip-audio-strong: #3fbf86;
+
+  --color-danger: #ef5350;
+  --color-warning: #f2b347;
+  --color-success: #44c08a;
+
+  --radius-xs: 2px;
+  --radius-sm: 3px;
+  --radius-md: 4px;
+
+  --shadow-popover: 0 8px 24px rgb(0 0 0 / 0.45), 0 0 0 1px rgb(255 255 255 / 0.04);
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    overflow: hidden;
+    background: var(--color-surface-0);
+    color: var(--color-fg);
+    font-family: var(--font-sans);
+    font-size: var(--text-sm);
+    line-height: var(--text-sm--line-height);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    user-select: none;
+    color-scheme: dark;
+  }
+
+  input,
+  textarea,
+  [contenteditable='true'] {
+    user-select: text;
+  }
+
+  :focus-visible {
+    outline: 1px solid var(--color-accent);
+    outline-offset: 1px;
+  }
+
+  ::selection {
+    background: var(--color-accent-muted);
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-surface-5) transparent;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-surface-4);
+    border: 2px solid transparent;
+    border-radius: 6px;
+    background-clip: padding-box;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: var(--color-surface-5);
+  }
+
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
+  dialog::backdrop {
+    background: rgb(0 0 0 / 0.55);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      transition-duration: 0ms !important;
+      animation-duration: 0ms !important;
+    }
+  }
+}
+
+@layer components {
+  .scrubber-row {
+    display: flex;
+    min-height: 18px;
+    align-items: center;
+  }
+
+  .scrubber-input {
+    width: 100%;
+    height: 14px;
+    margin: 0;
+    appearance: none;
+    background: transparent;
+    cursor: pointer;
+  }
+
+  .scrubber-input:disabled {
+    cursor: default;
+    opacity: 0.3;
+  }
+
+  .scrubber-input::-webkit-slider-runnable-track {
+    height: 3px;
+    border-radius: 2px;
+    background: var(--color-line-strong);
+  }
+
+  .scrubber-input::-webkit-slider-thumb {
+    appearance: none;
+    width: 10px;
+    height: 10px;
+    margin-top: -3.5px;
+    border: none;
+    border-radius: 50%;
+    background: var(--color-playhead);
+    box-shadow: 0 0 0 1px rgb(0 0 0 / 0.35);
+  }
+
+  .scrubber-input::-moz-range-track {
+    height: 3px;
+    border: none;
+    border-radius: 2px;
+    background: var(--color-line-strong);
+  }
+
+  .scrubber-input::-moz-range-thumb {
+    width: 10px;
+    height: 10px;
+    border: none;
+    border-radius: 50%;
+    background: var(--color-playhead);
+    box-shadow: 0 0 0 1px rgb(0 0 0 / 0.35);
+  }
+}

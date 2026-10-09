@@ -1,0 +1,26 @@
+appId: app.timeline.editor
+productName: Timeline
+copyright: Copyright © Timeline contributors
+asar: true
+directories:
+  output: release
+files:
+  - dist/**/*
+  - dist-electron/**/*
+  - package.json
+extraMetadata:
+  main: dist-electron/main/index.cjs
+win:
+  target:
+    - nsis
+linux:
+  target:
+    - AppImage
+  category: Video
+mac:
+  target:
+    - dmg
+  category: public.app-category.video
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true

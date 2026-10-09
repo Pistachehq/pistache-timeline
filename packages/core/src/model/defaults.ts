@@ -1,0 +1,41 @@
+import { FrameRates, type FrameRate } from '../time/rational';
+import { type ClipAudio, type ClipTransform, type Resolution } from './types';
+
+/** Version of the persisted project schema produced by this build. */
+export const CURRENT_SCHEMA_VERSION = 1;
+
+export const DEFAULT_PROJECT_NAME = 'Untitled Project';
+
+export const DEFAULT_SEQUENCE_SETTINGS = {
+  name: 'Sequence 01',
+  resolution: { width: 1920, height: 1080 } satisfies Resolution,
+  frameRate: FrameRates.fps30 satisfies FrameRate,
+  videoTrackCount: 3,
+  audioTrackCount: 3,
+} as const;
+
+export const DEFAULT_CLIP_TRANSFORM: ClipTransform = {
+  positionX: 0,
+  positionY: 0,
+  scale: 100,
+  rotation: 0,
+  opacity: 100,
+};
+
+export const DEFAULT_CLIP_AUDIO: ClipAudio = {
+  volume: 100,
+  muted: false,
+  pan: 0,
+};
+
+export const TRANSFORM_LIMITS = {
+  position: { min: -100_000, max: 100_000 },
+  scale: { min: 0, max: 10_000 },
+  rotation: { min: -36_000, max: 36_000 },
+  opacity: { min: 0, max: 100 },
+} as const;
+
+export const AUDIO_LIMITS = {
+  volume: { min: 0, max: 100 },
+  pan: { min: -100, max: 100 },
+} as const;

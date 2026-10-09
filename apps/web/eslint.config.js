@@ -1,0 +1,8 @@
+import { createConfig } from '@timeline/config/eslint';
+
+export default createConfig({
+  tsconfigRootDir: import.meta.dirname,
+  react: true,
+  node: true,
+  ignores: ['e2e/**'],
+});

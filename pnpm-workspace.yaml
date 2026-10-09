@@ -1,0 +1,13 @@
+packages:
+  - apps/*
+  - packages/*
+
+# Packages that are allowed to run install scripts.
+# Electron downloads its platform binary during installation.
+allowBuilds:
+  electron: true
+  esbuild: true
+  electron-winstaller: true
+
+minimumReleaseAgeExclude:
+  - lucide-react@1.53.0

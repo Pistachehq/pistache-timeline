@@ -1,0 +1,33 @@
+{
+  "name": "timeline",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Timeline — an open-source, cross-platform nonlinear video editor for the web and desktop.",
+  "license": "MIT",
+  "type": "module",
+  "packageManager": "pnpm@12.10.1",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "dev:web": "turbo run dev --filter=@timeline/web",
+    "dev:desktop": "turbo run dev --filter=@timeline/desktop",
+    "build": "turbo run build",
+    "build:web": "turbo run build --filter=@timeline/web",
+    "build:desktop": "turbo run build --filter=@timeline/desktop",
+    "package:desktop": "pnpm --filter @timeline/desktop run package",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "test:e2e": "turbo run test:e2e --filter=@timeline/web",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "devDependencies": {
+    "@timeline/config": "workspace:*",
+    "prettier": "3.9.9",
+    "prettier-plugin-tailwindcss": "0.8.1",
+    "turbo": "2.11.7",
+    "typescript": "6.0.3"
+  }
+}

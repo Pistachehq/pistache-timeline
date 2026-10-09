@@ -1,0 +1,43 @@
+{
+  "name": "@timeline/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Timeline desktop application (Electron).",
+  "license": "MIT",
+  "type": "module",
+  "author": "Timeline contributors",
+  "main": "dist-electron/main/index.cjs",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "build": "node scripts/build.mjs",
+    "package": "pnpm build && electron-builder --config electron-builder.yml",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@timeline/core": "workspace:*",
+    "@timeline/editor": "workspace:*",
+    "@timeline/media": "workspace:*",
+    "@timeline/shared": "workspace:*",
+    "@timeline/ui": "workspace:*",
+    "react": "19.3.0",
+    "react-dom": "19.3.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "4.3.3",
+    "@timeline/config": "workspace:*",
+    "@types/node": "24.5.2",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.2",
+    "electron": "44.7.0",
+    "electron-builder": "26.16.0",
+    "esbuild": "0.27.7",
+    "eslint": "10.12.0",
+    "tailwindcss": "4.3.3",
+    "typescript": "6.0.3",
+    "vite": "8.3.2",
+    "vitest": "5.0.3"
+  }
+}
