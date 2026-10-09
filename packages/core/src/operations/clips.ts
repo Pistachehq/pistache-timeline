@@ -20,7 +20,8 @@ import { eraseRangeOnTrack, type SplitClipStep } from '../timeline/overwrite';
 import { type EditResult, fail, replaceTrack, sortClipIds, updateSequence } from './common';
 
 export function canTrackHoldAsset(track: Track, asset: MediaAsset): boolean {
-  return track.kind === 'video' ? asset.hasVideo : asset.hasAudio;
+  if (track.kind === 'video') return asset.hasVideo || asset.kind === 'image';
+  return asset.hasAudio;
 }
 
 export interface AddClipInput {
@@ -382,6 +383,10 @@ function limit(value: number | undefined, current: number, range: { min: number;
   return isFiniteNumber(value) ? clamp(value, range.min, range.max) : current;
 }
 
+function limitMin(value: number | undefined, current: number, min: number): number {
+  return isFiniteNumber(value) ? Math.max(min, value) : current;
+}
+
 export interface UpdateClipTransformInput {
   readonly sequenceId: SequenceId;
   readonly clipId: ClipId;
@@ -414,7 +419,7 @@ export function updateClipAudio(project: Project, input: UpdateClipAudioInput): 
   return updateClip(project, input.sequenceId, input.clipId, (clip) => {
     const a = input.audio;
     const next: ClipAudio = {
-      volume: limit(a.volume, clip.audio.volume, AUDIO_LIMITS.volume),
+      volume: limitMin(a.volume, clip.audio.volume, AUDIO_LIMITS.volume.min),
       pan: limit(a.pan, clip.audio.pan, AUDIO_LIMITS.pan),
       muted: typeof a.muted === 'boolean' ? a.muted : clip.audio.muted,
     };

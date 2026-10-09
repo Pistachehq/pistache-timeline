@@ -157,12 +157,13 @@ export function createEditActions(services: EditorServices) {
         ui.getState().notify(`${asset.name} is shorter than one frame.`, 'warning');
         return null;
       }
-      const tracks = asset.hasVideo ? sequence.videoTracks : sequence.audioTracks;
+      const onVideoTrack = asset.hasVideo || asset.kind === 'image';
+      const tracks = onVideoTrack ? sequence.videoTracks : sequence.audioTracks;
       const unlocked = tracks.filter((track) => !track.locked);
       const frame = playback.getState().playhead;
       const track = unlocked[0];
       if (!track) {
-        ui.getState().notify(`All ${asset.hasVideo ? 'video' : 'audio'} tracks are locked.`, 'warning');
+        ui.getState().notify(`All ${onVideoTrack ? 'video' : 'audio'} tracks are locked.`, 'warning');
         return null;
       }
       return placeClip(assetId, track.id, Math.max(0, frame), 'Insert Clip');

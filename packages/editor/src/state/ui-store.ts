@@ -84,6 +84,10 @@ export interface UiState {
   readonly clipTrim: ClipTrimState | null;
   readonly marquee: MarqueeState | null;
   readonly assetDrag: MediaAssetId | null;
+  /** Clip currently driving the audio meter (if any). */
+  readonly playbackMeterClipId: ClipId | null;
+  /** Short-term peak 0…1 for live waveform motion. */
+  readonly playbackMeterPeak: number;
 
   setTool(tool: EditTool): void;
   setZoom(pixelsPerFrame: number): void;
@@ -104,6 +108,7 @@ export interface UiState {
   setClipTrim(trim: ClipTrimState | null): void;
   setMarquee(marquee: MarqueeState | null): void;
   setAssetDrag(assetId: MediaAssetId | null): void;
+  setPlaybackMeter(clipId: ClipId | null, peak: number): void;
 }
 
 export type UiStore = StoreApi<UiState>;
@@ -124,6 +129,8 @@ export function createUiStore(): UiStore {
     clipTrim: null,
     marquee: null,
     assetDrag: null,
+    playbackMeterClipId: null,
+    playbackMeterPeak: 0,
 
     setTool: (tool) => set({ tool }),
     setZoom: (pixelsPerFrame) => set({ pixelsPerFrame: clampZoom(pixelsPerFrame) }),
@@ -171,5 +178,7 @@ export function createUiStore(): UiStore {
     setClipTrim: (clipTrim) => set({ clipTrim }),
     setMarquee: (marquee) => set({ marquee }),
     setAssetDrag: (assetDrag) => set({ assetDrag }),
+    setPlaybackMeter: (playbackMeterClipId, playbackMeterPeak) =>
+      set({ playbackMeterClipId, playbackMeterPeak: Math.max(0, Math.min(1, playbackMeterPeak)) }),
   }));
 }

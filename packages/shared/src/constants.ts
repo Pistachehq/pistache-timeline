@@ -11,4 +11,9 @@ export const MAX_PROJECT_FILE_BYTES = 50 * 1024 * 1024;
 
 export const VIDEO_EXTENSIONS = ['mp4', 'm4v', 'webm', 'mov', 'mkv', 'ogv'] as const;
 export const AUDIO_EXTENSIONS = ['mp3', 'wav', 'ogg', 'oga', 'm4a', 'aac', 'flac', 'opus'] as const;
-export const MEDIA_EXTENSIONS: readonly string[] = [...VIDEO_EXTENSIONS, ...AUDIO_EXTENSIONS];
+export const IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'avif', 'svg'] as const;
+export const MEDIA_EXTENSIONS: readonly string[] = [
+  ...VIDEO_EXTENSIONS,
+  ...AUDIO_EXTENSIONS,
+  ...IMAGE_EXTENSIONS,
+];

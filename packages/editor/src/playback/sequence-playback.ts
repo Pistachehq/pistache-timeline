@@ -1,5 +1,7 @@
 import {
   type ActiveVideoClip,
+  combinedClipTrackLinearGain,
+  effectiveClipLinearGain,
   findTrack,
   framesToSeconds,
   getActiveSequence,
@@ -18,6 +20,7 @@ import {
 import { type MediaPlayer } from '@timeline/media';
 import { type EditorServices } from '../runtime/services';
 import { FrameClock, frameForSourceTime, sourceTimeForFrame } from './frame-math';
+import { readPlaybackAudioPeak, setPlaybackAudioMix, teardownPlaybackAudioMeter } from './playback-audio-meter';
 
 /**
  * Drives the Program Monitor: topmost video for picture, topmost audio-track
@@ -80,6 +83,8 @@ export class SequencePlaybackController {
     this.#audio.element.removeEventListener('seeked', this.#onLoadedData);
     this.#video.dispose();
     this.#audio.dispose();
+    teardownPlaybackAudioMeter();
+    this.#services.stores.ui.getState().setPlaybackMeter(null, 0);
     this.#services.stores.playback.getState().setProgram(null, 'empty');
   }
 
@@ -130,6 +135,7 @@ export class SequencePlaybackController {
     this.#audioClip = audioClip;
 
     if (activeVideo) {
+      const asset = this.#services.stores.project.getState().project.mediaAssets[activeVideo.clip.assetId];
       const entry = media.getState().entries[activeVideo.clip.assetId];
       if (entry?.status !== 'online' || !entry.handle) {
         this.#video.load(null);
@@ -137,12 +143,20 @@ export class SequencePlaybackController {
         playback.getState().setProgram(activeVideo.clip.id, entry?.status === 'resolving' ? 'loading' : 'offline');
         return null;
       }
-      if (this.#loadedVideoAssetId !== activeVideo.clip.assetId) {
-        this.#video.load(entry.handle);
-        this.#loadedVideoAssetId = activeVideo.clip.assetId;
+      if (asset?.kind === 'image') {
+        if (this.#loadedVideoAssetId !== null) {
+          this.#video.load(null);
+          this.#loadedVideoAssetId = null;
+        }
+        playback.getState().setProgram(activeVideo.clip.id, 'ready');
+      } else {
+        if (this.#loadedVideoAssetId !== activeVideo.clip.assetId) {
+          this.#video.load(entry.handle);
+          this.#loadedVideoAssetId = activeVideo.clip.assetId;
+        }
+        this.#video.setMuted(true);
+        playback.getState().setProgram(activeVideo.clip.id, this.#video.ready ? 'ready' : 'loading');
       }
-      this.#video.setMuted(true);
-      playback.getState().setProgram(activeVideo.clip.id, this.#video.ready ? 'ready' : 'loading');
     } else {
       if (this.#loadedVideoAssetId !== null) {
         this.#video.load(null);
@@ -158,8 +172,10 @@ export class SequencePlaybackController {
           this.#audio.load(entry.handle);
           this.#loadedAudioAssetId = audioClip.assetId;
         }
-        this.#audio.setVolume(audioClip.audio.volume / 100);
-        this.#audio.setMuted(audioClip.audio.muted);
+        const linearGain = this.#outputGain(sequence, audioClip);
+        this.#audio.setVolume(1);
+        this.#audio.setMuted(false);
+        setPlaybackAudioMix(this.#audio.element, linearGain, audioClip.audio.pan);
       } else {
         this.#audio.load(null);
         this.#loadedAudioAssetId = null;
@@ -252,6 +268,14 @@ export class SequencePlaybackController {
     return clip.id === active.clip.id ? active : { clip, track };
   }
 
+  #outputGain(sequence: Sequence, clip: Clip): number {
+    const track = findTrack(sequence, clip.trackId);
+    if (track?.kind === 'audio') {
+      return combinedClipTrackLinearGain(clip.audio, track.volume, track.muted);
+    }
+    return effectiveClipLinearGain(clip);
+  }
+
   #promoteAudioClipForMediaTime(sequence: Sequence, clip: Clip, mediaSeconds: number): Clip {
     const rate = sequence.frameRate;
     let current = clip;
@@ -268,7 +292,14 @@ export class SequencePlaybackController {
   readonly #tick = (now: number) => {
     const { playback } = this.#services.stores;
     const sequence = this.#sequence();
-    if (!sequence || !playback.getState().playing) return;
+    if (!sequence || !playback.getState().playing) {
+      this.#services.stores.ui.getState().setPlaybackMeter(null, 0);
+      return;
+    }
+
+    const meterClip = this.#audioClip?.id ?? null;
+    const meterPeak = readPlaybackAudioPeak(this.#audio.element);
+    this.#services.stores.ui.getState().setPlaybackMeter(meterClip, meterPeak);
 
     const elapsed = now - this.#lastTick;
     this.#lastTick = now;
@@ -278,40 +309,48 @@ export class SequencePlaybackController {
     let next = current;
 
     if (this.#videoClip) {
-      if (this.#video.ready && !this.#video.paused) {
-        this.#videoClip = this.#promoteVideoClipForMediaTime(sequence, this.#videoClip, this.#video.currentTime);
-        this.#boundVideoClipId = this.#videoClip.clip.id;
-        if (this.#audioClip && this.#audio.ready && !this.#audio.paused) {
-          const promoted = this.#promoteAudioClipForMediaTime(sequence, this.#audioClip, this.#audio.currentTime);
-          if (promoted.id !== this.#audioClip.id) {
-            this.#audioClip = promoted;
-            this.#boundAudioClipId = promoted.id;
+      const topAsset = this.#services.stores.project.getState().project.mediaAssets[this.#videoClip.clip.assetId];
+      if (topAsset?.kind === 'image') {
+        next = this.#clock.advance(current, elapsed, sequence.frameRate);
+        if (next >= getClipEnd(this.#videoClip.clip)) {
+          next = getClipEnd(this.#videoClip.clip);
+        }
+      } else {
+        if (this.#video.ready && !this.#video.paused) {
+          this.#videoClip = this.#promoteVideoClipForMediaTime(sequence, this.#videoClip, this.#video.currentTime);
+          this.#boundVideoClipId = this.#videoClip.clip.id;
+          if (this.#audioClip && this.#audio.ready && !this.#audio.paused) {
+            const promoted = this.#promoteAudioClipForMediaTime(sequence, this.#audioClip, this.#audio.currentTime);
+            if (promoted.id !== this.#audioClip.id) {
+              this.#audioClip = promoted;
+              this.#boundAudioClipId = promoted.id;
+            }
           }
         }
-      }
 
-      const clip = this.#videoClip.clip;
+        const clip = this.#videoClip.clip;
 
-      if (this.#video.element.ended) {
-        next = getClipEnd(clip);
-      } else if (this.#video.paused) {
-        const seconds = sourceTimeForFrame(clip, current, sequence.frameRate);
-        this.#video.seek(seconds);
-        if (this.#audioClip) {
-          this.#audio.seek(sourceTimeForFrame(this.#audioClip, current, sequence.frameRate));
-        }
-        void this.#video.play().catch(() => undefined);
-        void this.#audio.play().catch(() => undefined);
-      } else if (this.#video.ready) {
-        next = Math.max(current, frameForSourceTime(clip, this.#video.currentTime, sequence.frameRate));
-      }
-
-      if (next >= getClipEnd(clip)) {
-        const seamless = getSeamlessClipSuccessor(sequence, clip);
-        if (!seamless || this.#video.paused) {
+        if (this.#video.element.ended) {
           next = getClipEnd(clip);
-          this.#video.pause();
-          this.#audio.pause();
+        } else if (this.#video.paused) {
+          const seconds = sourceTimeForFrame(clip, current, sequence.frameRate);
+          this.#video.seek(seconds);
+          if (this.#audioClip) {
+            this.#audio.seek(sourceTimeForFrame(this.#audioClip, current, sequence.frameRate));
+          }
+          void this.#video.play().catch(() => undefined);
+          void this.#audio.play().catch(() => undefined);
+        } else if (this.#video.ready) {
+          next = Math.max(current, frameForSourceTime(clip, this.#video.currentTime, sequence.frameRate));
+        }
+
+        if (next >= getClipEnd(clip)) {
+          const seamless = getSeamlessClipSuccessor(sequence, clip);
+          if (!seamless || this.#video.paused) {
+            next = getClipEnd(clip);
+            this.#video.pause();
+            this.#audio.pause();
+          }
         }
       }
     } else if (this.#audioClip) {

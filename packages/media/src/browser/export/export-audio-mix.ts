@@ -1,7 +1,13 @@
 import {
+  applyStereoPan,
+  combinedClipTrackLinearGain,
+  effectiveClipLinearGain,
+  findTrack,
   framesToSeconds,
-  getAudibleClipsAt,
+  getActiveAudioClipsAt,
   getSequenceDuration,
+  getTopmostVideoClipAt,
+  clipContributesEmbeddedAudio,
   secondsToFrames,
   type Clip,
   type FrameRate,
@@ -37,12 +43,13 @@ function stereoSample(buffer: AudioBuffer, sourceSeconds: number): [number, numb
   return [readSample(buffer, sourceSeconds, 0), readSample(buffer, sourceSeconds, 1)];
 }
 
-function applyClipGain(left: number, right: number, clip: Clip): [number, number] {
-  const gain = clip.audio.volume / 100;
-  const t = (clip.audio.pan + 100) / 200;
-  const lGain = Math.cos((t * Math.PI) / 2) * gain;
-  const rGain = Math.sin((t * Math.PI) / 2) * gain;
-  return [left * lGain, right * rGain];
+function applyClipGain(left: number, right: number, clip: Clip, sequence: Sequence): [number, number] {
+  const track = findTrack(sequence, clip.trackId);
+  const gain =
+    track?.kind === 'audio'
+      ? combinedClipTrackLinearGain(clip.audio, track.volume, track.muted)
+      : effectiveClipLinearGain(clip);
+  return applyStereoPan(left, right, clip.audio.pan, gain);
 }
 
 /** Maps timeline time (seconds) to source media time for a clip. */
@@ -111,17 +118,30 @@ export async function mixSequenceAudio(
       getSequenceDuration(sequence) - 1,
       Math.max(0, secondsToFrames(t, sequence.frameRate, 'floor')),
     );
-    const clips = getAudibleClipsAt(sequence, seqFrame, project.mediaAssets);
     let l = 0;
     let r = 0;
-    for (const clip of clips) {
+    for (const { clip } of getActiveAudioClipsAt(sequence, seqFrame)) {
+      const asset = project.mediaAssets[clip.assetId];
+      if (!asset?.hasAudio) continue;
       const buffer = buffers.get(clip.assetId);
       if (!buffer) continue;
       const sourceSeconds = sourceSecondsForClip(clip, t, sequence.frameRate);
       const [sl, sr] = stereoSample(buffer, sourceSeconds);
-      const [gl, gr] = applyClipGain(sl, sr, clip);
+      const [gl, gr] = applyClipGain(sl, sr, clip, sequence);
       l += gl;
       r += gr;
+    }
+    const program = getTopmostVideoClipAt(sequence, seqFrame);
+    if (program && clipContributesEmbeddedAudio(program.clip)) {
+      const asset = project.mediaAssets[program.clip.assetId];
+      const buffer = asset?.hasAudio ? buffers.get(program.clip.assetId) : undefined;
+      if (buffer) {
+        const sourceSeconds = sourceSecondsForClip(program.clip, t, sequence.frameRate);
+        const [sl, sr] = stereoSample(buffer, sourceSeconds);
+        const [gl, gr] = applyClipGain(sl, sr, program.clip, sequence);
+        l += gl;
+        r += gr;
+      }
     }
     left[sample] = Math.max(-1, Math.min(1, l));
     right[sample] = Math.max(-1, Math.min(1, r));

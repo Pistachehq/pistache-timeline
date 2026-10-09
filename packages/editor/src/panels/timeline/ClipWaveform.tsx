@@ -1,3 +1,4 @@
+import { combinedClipTrackLinearGain, waveformSampleToHeight } from '@timeline/core';
 import { type WaveformPeaks } from '@timeline/media';
 import { memo, useLayoutEffect, useRef } from 'react';
 
@@ -8,6 +9,8 @@ interface ClipWaveformProps {
   readonly assetFrameCount: number;
   readonly width: number;
   readonly height: number;
+  /** Combined clip × track linear gain (0…4+). */
+  readonly gainLinear: number;
 }
 
 function bucketRange(sourceIn: number, sourceOut: number, assetFrameCount: number, bucketCount: number) {
@@ -15,6 +18,26 @@ function bucketRange(sourceIn: number, sourceOut: number, assetFrameCount: numbe
   const start = Math.floor((sourceIn / assetFrameCount) * bucketCount);
   const end = Math.max(start + 1, Math.ceil((sourceOut / assetFrameCount) * bucketCount));
   return { start, end: Math.min(bucketCount, end) };
+}
+
+/** Peak abs amplitude in bucket range for normalizing visible waveform. */
+function rangePeak(
+  peaks: WaveformPeaks,
+  channelIndex: 0 | 1,
+  startBucket: number,
+  endBucket: number,
+): number {
+  const { minMax, bucketCount, channelCount } = peaks;
+  const stride = channelCount === 2 ? 4 : 2;
+  const minOffset = channelIndex === 0 ? 0 : 2;
+  let peak = 0;
+  const bStart = Math.max(0, Math.floor(startBucket));
+  const bEnd = Math.min(bucketCount, Math.ceil(endBucket));
+  for (let b = bStart; b < bEnd; b++) {
+    const i = b * stride + minOffset;
+    peak = Math.max(peak, Math.abs(minMax[i]!), Math.abs(minMax[i + 1]!));
+  }
+  return peak;
 }
 
 function drawChannel(
@@ -26,12 +49,16 @@ function drawChannel(
   width: number,
   top: number,
   bandHeight: number,
+  gainLinear: number,
+  normalize: number,
 ) {
   const { bucketCount, minMax } = peaks;
   const stride = peaks.channelCount === 2 ? 4 : 2;
   const minOffset = channelIndex === 0 ? 0 : 2;
   const centerY = top + bandHeight / 2;
   const halfH = bandHeight / 2 - 1;
+
+  const amp = (linear: number) => waveformSampleToHeight(Math.min(1, Math.abs(linear) * normalize), gainLinear);
 
   ctx.beginPath();
   ctx.moveTo(0, centerY);
@@ -46,7 +73,7 @@ function drawChannel(
     const max =
       minMax[idx0 + 1]! * (1 - frac) +
       minMax[idx1 + 1]! * frac;
-    ctx.lineTo(x, centerY - max * halfH);
+    ctx.lineTo(x, centerY - amp(max) * halfH);
   }
   for (let x = width; x >= 0; x--) {
     const t = width <= 0 ? 0 : x / width;
@@ -59,7 +86,7 @@ function drawChannel(
     const min =
       minMax[idx0]! * (1 - frac) +
       minMax[idx1]! * frac;
-    ctx.lineTo(x, centerY - min * halfH);
+    ctx.lineTo(x, centerY + amp(min) * halfH);
   }
   ctx.closePath();
   ctx.fill();
@@ -72,6 +99,7 @@ export const ClipWaveform = memo(function ClipWaveform({
   assetFrameCount,
   width,
   height,
+  gainLinear,
 }: ClipWaveformProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -91,18 +119,23 @@ export const ClipWaveform = memo(function ClipWaveform({
     if (!ctx) return;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, width, height);
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.38)';
 
     const { start, end } = bucketRange(sourceIn, sourceOut, assetFrameCount, peaks.bucketCount);
+
     if (peaks.channelCount === 2) {
       const half = height / 2;
-      drawChannel(ctx, peaks, 0, start, end, width, 0, half);
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.32)';
-      drawChannel(ctx, peaks, 1, start, end, width, half, half);
+      const normL = 1 / Math.max(0.08, rangePeak(peaks, 0, start, end));
+      const normR = 1 / Math.max(0.08, rangePeak(peaks, 1, start, end));
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.42)';
+      drawChannel(ctx, peaks, 0, start, end, width, 0, half, gainLinear, normL);
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.36)';
+      drawChannel(ctx, peaks, 1, start, end, width, half, half, gainLinear, normR);
     } else {
-      drawChannel(ctx, peaks, 0, start, end, width, 0, height);
+      const norm = 1 / Math.max(0.08, rangePeak(peaks, 0, start, end));
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.42)';
+      drawChannel(ctx, peaks, 0, start, end, width, 0, height, gainLinear, norm);
     }
-  }, [peaks, sourceIn, sourceOut, assetFrameCount, width, height]);
+  }, [peaks, sourceIn, sourceOut, assetFrameCount, width, height, gainLinear]);
 
   return (
     <canvas
@@ -112,3 +145,17 @@ export const ClipWaveform = memo(function ClipWaveform({
     />
   );
 });
+
+/** Linear gain for timeline waveforms from clip + optional audio track. */
+export function clipWaveformGainLinear(
+  clipVolume: number,
+  clipMuted: boolean,
+  trackVolume: number,
+  trackMuted: boolean,
+): number {
+  return combinedClipTrackLinearGain(
+    { volume: clipVolume, muted: clipMuted, pan: 0 },
+    trackVolume,
+    trackMuted,
+  );
+}

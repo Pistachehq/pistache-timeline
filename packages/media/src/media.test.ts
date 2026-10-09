@@ -8,6 +8,7 @@ describe('media kind detection', () => {
     expect(detectMediaKind('clip.bin', 'video/mp4')).toBe('video');
     expect(detectMediaKind('song.FLAC', '')).toBe('audio');
     expect(detectMediaKind('clip.mov')).toBe('video');
+    expect(detectMediaKind('photo.png')).toBe('image');
     expect(detectMediaKind('notes.txt', 'text/plain')).toBeNull();
     expect(guessMimeType('a.webm')).toBe('video/webm');
   });

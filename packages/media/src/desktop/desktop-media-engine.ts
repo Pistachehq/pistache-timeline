@@ -1,6 +1,8 @@
 import { frameRateFromNumber, type MediaKind, type MediaSourceRef } from '@timeline/core';
 import { type DesktopMediaFile, type TimelineDesktopApi } from '@timeline/shared';
 import { MediaElementPlayer } from '../browser/media-element-player';
+import { captureImageThumbnail } from '../browser/image-thumbnail';
+import { probeImage } from '../browser/probe-image';
 import { probeWithMediaElement } from '../browser/probe';
 import { captureVideoThumbnail } from '../browser/thumbnail';
 import { browserExportSupported, exportBrowserSequence } from '../browser/export-sequence';
@@ -71,6 +73,10 @@ export function createDesktopMediaEngine(bridge: DesktopMediaBridge): MediaEngin
       return { files: picked, rejected };
     },
 
+    pickMediaFolder() {
+      return engine.pickMedia({ multiple: true });
+    },
+
     async importLocalFiles(files: readonly File[]) {
       const picked: PickedMedia[] = [];
       const rejected: RejectedMedia[] = [];
@@ -114,6 +120,7 @@ export function createDesktopMediaEngine(bridge: DesktopMediaBridge): MediaEngin
     },
 
     async probe(handle: MediaHandle, kind: MediaKind, signal?: AbortSignal): Promise<MediaMetadata> {
+      if (kind === 'image') return probeImage(handle, signal);
       const result = await bridge.probe(handle.id).catch(() => null);
       if (!result?.durationSeconds) return probeWithMediaElement(handle, kind, signal);
       if (kind === 'video' && !result.hasVideo) return probeWithMediaElement(handle, kind, signal);
@@ -131,7 +138,8 @@ export function createDesktopMediaEngine(bridge: DesktopMediaBridge): MediaEngin
       };
     },
 
-    createThumbnail: (handle, request) => captureVideoThumbnail(handle, request),
+    createThumbnail: (handle, request, kind) =>
+      kind === 'image' ? captureImageThumbnail(handle, request) : captureVideoThumbnail(handle, request),
     createPlayer: (element) => new MediaElementPlayer(element),
     exportSequence: (request, options) =>
       exportBrowserSequence(

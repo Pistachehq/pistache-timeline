@@ -9,6 +9,7 @@ export type CommandId =
   | 'file.save'
   | 'file.saveAs'
   | 'file.import'
+  | 'file.importFolder'
   | 'file.export'
   | 'edit.undo'
   | 'edit.redo'
@@ -58,6 +59,7 @@ export const COMMANDS: readonly Command[] = [
   { id: 'file.save', label: 'Save', run: (rt) => rt.actions.project.saveProject() },
   { id: 'file.saveAs', label: 'Save As…', run: (rt) => rt.actions.project.saveProjectAs() },
   { id: 'file.import', label: 'Import Media…', run: (rt) => rt.actions.media.importMedia() },
+  { id: 'file.importFolder', label: 'Import Folder…', run: (rt) => rt.actions.media.importMediaFolder() },
   { id: 'file.export', label: 'Export…', run: (rt) => rt.stores.ui.getState().openDialog({ kind: 'export' }) },
 
   {

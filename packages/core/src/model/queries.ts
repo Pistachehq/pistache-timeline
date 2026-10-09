@@ -176,6 +176,21 @@ export function getTopmostVideoClipAt(sequence: Sequence, frame: number): Active
   return null;
 }
 
+/** Video/image clips on enabled, visible tracks at `frame`, bottom track first (for compositing). */
+export function getStackedVideoClipsAt(sequence: Sequence, frame: number): ActiveVideoClip[] {
+  const stack: ActiveVideoClip[] = [];
+  for (const track of sequence.videoTracks) {
+    if (!track.enabled || !track.visible) continue;
+    const clip = getClipAtFrame(sequence, track, frame);
+    if (clip?.enabled) stack.push({ clip, track });
+  }
+  return stack;
+}
+
+export function assetPlaysOnVideoTrack(asset: MediaAsset): boolean {
+  return asset.hasVideo || asset.kind === 'image';
+}
+
 export interface ActiveAudioClip {
   readonly clip: Clip;
   readonly track: AudioTrack;

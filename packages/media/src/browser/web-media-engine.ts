@@ -8,7 +8,9 @@ import {
   type PickMediaResult,
 } from '../types';
 import { pickMediaFromFiles } from './import-local-files';
-import { pickFiles } from './file-picker';
+import { pickFiles, pickFolderFiles } from './file-picker';
+import { captureImageThumbnail } from './image-thumbnail';
+import { probeImage } from './probe-image';
 import { MediaElementPlayer } from './media-element-player';
 import { probeWithMediaElement } from './probe';
 import { captureVideoThumbnail } from './thumbnail';
@@ -63,6 +65,11 @@ export function createWebMediaEngine(options: WebMediaEngineOptions = {}): Media
       return pickMediaFromFiles(selected, register);
     },
 
+    async pickMediaFolder(): Promise<PickMediaResult> {
+      const selected = await pickFolderFiles();
+      return pickMediaFromFiles(selected, register);
+    },
+
     importLocalFiles(files: readonly File[]): Promise<PickMediaResult> {
       return Promise.resolve(pickMediaFromFiles(files, register));
     },
@@ -75,8 +82,10 @@ export function createWebMediaEngine(options: WebMediaEngineOptions = {}): Media
       return Promise.resolve(null);
     },
 
-    probe: (handle, kind, signal) => probeWithMediaElement(handle, kind, signal),
-    createThumbnail: (handle, request) => captureVideoThumbnail(handle, request),
+    probe: (handle, kind, signal) =>
+      kind === 'image' ? probeImage(handle, signal) : probeWithMediaElement(handle, kind, signal),
+    createThumbnail: (handle, request, kind) =>
+      kind === 'image' ? captureImageThumbnail(handle, request) : captureVideoThumbnail(handle, request),
     createPlayer: (element) => new MediaElementPlayer(element),
     exportSequence: (request, options) =>
       exportBrowserSequence(request, { resolve: (source: MediaSourceRef) => engine.resolve(source) }, options),

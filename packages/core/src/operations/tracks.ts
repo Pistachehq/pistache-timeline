@@ -1,8 +1,14 @@
 import { ok } from '@timeline/shared';
+import { AUDIO_LIMITS } from '../model/defaults';
 import { createAudioTrack, createVideoTrack } from '../model/factory';
 import { findTrack } from '../model/queries';
 import { type Project, type SequenceId, type Track, type TrackId, type TrackKind } from '../model/types';
 import { type EditResult, fail, replaceTrack, updateSequence } from './common';
+
+function limitVolume(value: number | undefined, current: number): number {
+  if (value === undefined) return current;
+  return Math.max(AUDIO_LIMITS.volume.min, value);
+}
 
 export const MAX_TRACKS_PER_KIND = 99;
 
@@ -35,6 +41,8 @@ export interface TrackChanges {
   readonly visible?: boolean;
   /** Audio tracks only. */
   readonly muted?: boolean;
+  /** Audio tracks only. */
+  readonly volume?: number;
 }
 
 export interface UpdateTrackInput {
@@ -58,7 +66,12 @@ export function updateTrack(project: Project, input: UpdateTrackInput): EditResu
     const next: Track =
       track.kind === 'video'
         ? { ...track, ...base, visible: changes.visible ?? track.visible }
-        : { ...track, ...base, muted: changes.muted ?? track.muted };
+        : {
+            ...track,
+            ...base,
+            muted: changes.muted ?? track.muted,
+            volume: limitVolume(changes.volume, track.volume),
+          };
     const unchanged = (Object.keys(next) as (keyof Track)[]).every(
       (key) => (next as unknown as Record<string, unknown>)[key] === (track as unknown as Record<string, unknown>)[key],
     );

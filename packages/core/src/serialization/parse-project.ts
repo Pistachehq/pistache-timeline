@@ -69,7 +69,7 @@ function parseMediaAsset(value: unknown, path: string): MediaAsset {
   return {
     id: readString(obj, 'id', path) as MediaAssetId,
     name: readString(obj, 'name', path),
-    kind: readEnum(obj, 'kind', path, ['video', 'audio']),
+    kind: readEnum(obj, 'kind', path, ['video', 'audio', 'image']),
     source: {
       kind: 'local-file',
       fileName: readString(source, 'fileName', sourcePath),
@@ -139,7 +139,9 @@ function parseVideoTrack(value: unknown, path: string): VideoTrack {
 function parseAudioTrack(value: unknown, path: string): AudioTrack {
   const obj = readObject(value, path);
   readEnum(obj, 'kind', path, ['audio']);
-  return { ...parseTrackBase(obj, path), kind: 'audio', muted: readBoolean(obj, 'muted', path) };
+  const volume =
+    obj.volume === undefined ? 100 : readNumber(obj, 'volume', path);
+  return { ...parseTrackBase(obj, path), kind: 'audio', muted: readBoolean(obj, 'muted', path), volume };
 }
 
 function parseRecord<T>(value: unknown, path: string, parse: (entry: unknown, path: string) => T): Record<string, T> {

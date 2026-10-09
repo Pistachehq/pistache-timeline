@@ -1,6 +1,6 @@
 import { getMediaAssets } from '@timeline/core';
 import { Button, EmptyState, IconButton, PanelFrame } from '@timeline/ui';
-import { FolderOpen, Import } from 'lucide-react';
+import { FolderOpen, FolderUp, Import } from 'lucide-react';
 import { type DragEvent } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { executeCommand, shortcutLabel } from '../../commands/commands';
@@ -14,6 +14,7 @@ export function ProjectPanel() {
   const assets = useProjectState(useShallow((s) => getMediaAssets(s.project)));
   const projectName = useProjectState((s) => s.project.name);
   const importMedia = () => executeCommand('file.import', runtime);
+  const importFolder = () => executeCommand('file.importFolder', runtime);
 
   const onDropFiles = (event: DragEvent) => {
     if (!isOsFileDrag(event.dataTransfer)) return;
@@ -25,7 +26,15 @@ export function ProjectPanel() {
     <PanelFrame
       title={`Project: ${projectName}`}
       actions={
-        <IconButton label="Import media" shortcut={shortcutLabel('file.import')} icon={<Import />} onClick={importMedia} />
+        <>
+          <IconButton
+            label="Import folder"
+            shortcut={shortcutLabel('file.importFolder')}
+            icon={<FolderUp />}
+            onClick={importFolder}
+          />
+          <IconButton label="Import media" shortcut={shortcutLabel('file.import')} icon={<Import />} onClick={importMedia} />
+        </>
       }
     >
       <div
@@ -37,7 +46,7 @@ export function ProjectPanel() {
           <EmptyState
             icon={<FolderOpen />}
             title="No media imported"
-            description="Drop video or audio files here, or use Import Media, then drag bins onto the timeline."
+            description="Drop files or folders here (video, audio, images), or use Import, then drag items onto the timeline."
             action={
               <Button size="sm" icon={<Import className="size-3.5" />} onClick={importMedia}>
                 Import Media

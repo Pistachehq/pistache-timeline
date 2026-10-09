@@ -5,7 +5,7 @@ import { memo } from 'react';
 import { useFormatDisplayTime } from '../../hooks/use-format-display-time';
 import { useMediaState, useSelectionState, useUiState } from '../../runtime/context';
 import { useActiveSequence, useAsset } from '../../runtime/hooks';
-import { ClipWaveform } from './ClipWaveform';
+import { ClipWaveform, clipWaveformGainLinear } from './ClipWaveform';
 import { AUDIO_TRACK_HEIGHT, MIN_LABEL_WIDTH } from './layout';
 import { useClipDrag } from './use-clip-drag';
 import { useClipTrim } from './use-clip-trim';
@@ -50,6 +50,9 @@ export const ClipItem = memo(function ClipItem({
   const width = Math.max(2, duration * pixelsPerFrame);
   const assetFrameCount = asset && sequence ? getAssetFrameCount(asset, sequence) : 0;
   const showWaveform = !isVideo && waveform && assetFrameCount > 0;
+  const trackVolume = track.kind === 'audio' ? track.volume : 100;
+  const trackMuted = track.kind === 'audio' ? track.muted : false;
+  const waveformGain = clipWaveformGainLinear(clip.audio.volume, clip.audio.muted, trackVolume, trackMuted);
   const activeTrim = useUiState((s) => s.clipTrim);
   const isTrimPrimary = activeTrim?.primaryClipId === clip.id;
 
@@ -116,6 +119,7 @@ export const ClipItem = memo(function ClipItem({
           assetFrameCount={assetFrameCount}
           width={width}
           height={AUDIO_TRACK_HEIGHT - 8}
+          gainLinear={waveformGain}
         />
       ) : null}
       {isVideo && thumbnail && width > 48 ? (

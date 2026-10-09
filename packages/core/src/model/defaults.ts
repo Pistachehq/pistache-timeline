@@ -28,6 +28,9 @@ export const DEFAULT_CLIP_AUDIO: ClipAudio = {
   pan: 0,
 };
 
+/** Default timeline length when an image is imported (seconds). */
+export const DEFAULT_STILL_IMAGE_DURATION_SECONDS = 5;
+
 export const TRANSFORM_LIMITS = {
   position: { min: -100_000, max: 100_000 },
   scale: { min: 0, max: 10_000 },
@@ -35,7 +38,11 @@ export const TRANSFORM_LIMITS = {
   opacity: { min: 0, max: 100 },
 } as const;
 
+/** Clip/track volume at 0% maps here for display (−∞ is shown as this floor). */
+export const AUDIO_DB_FLOOR = -60;
+
 export const AUDIO_LIMITS = {
-  volume: { min: 0, max: 100 },
+  volume: { min: 0 },
   pan: { min: -100, max: 100 },
+  gainDb: { min: AUDIO_DB_FLOOR },
 } as const;

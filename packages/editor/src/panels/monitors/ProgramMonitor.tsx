@@ -1,12 +1,13 @@
-import { type Clip, formatDisplayTime, getActiveSequence, getSequenceDuration, type Sequence } from '@timeline/core';
+import { formatDisplayTime, getSequenceDuration, type Sequence } from '@timeline/core';
 import { EmptyState, PanelFrame, Select } from '@timeline/ui';
 import { Clapperboard, Link2Off, Loader2 } from 'lucide-react';
-import { type CSSProperties, useEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react';
+import { ProgramCompositeLayers } from './ProgramCompositeLayers';
 import { shortcutLabel } from '../../commands/commands';
 import { useElementSize } from '../../hooks/use-element-size';
 import { SequencePlaybackController } from '../../playback/sequence-playback';
 import { useTimeDisplayFormat } from '../../hooks/use-format-display-time';
-import { usePlaybackState, useProjectState, useRuntime, useUiState } from '../../runtime/context';
+import { usePlaybackState, useRuntime, useUiState } from '../../runtime/context';
 import { useActiveSequence } from '../../runtime/hooks';
 import { type MonitorScale } from '../../state/ui-store';
 import { PlayheadTimecode } from './PlayheadTimecode';
@@ -32,17 +33,6 @@ function frameSize(sequence: Sequence, scale: MonitorScale, area: { width: numbe
     Math.min((area.width - FRAME_PADDING) / width, (area.height - FRAME_PADDING) / height),
   );
   return { width: width * factor, height: height * factor };
-}
-
-function clipStyle(clip: Clip | undefined, sequence: Sequence): CSSProperties {
-  if (!clip) return { visibility: 'hidden' };
-  const t = clip.transform;
-  const x = (t.positionX / sequence.resolution.width) * 100;
-  const y = (t.positionY / sequence.resolution.height) * 100;
-  return {
-    transform: `translate(${x}%, ${y}%) rotate(${t.rotation}deg) scale(${t.scale / 100})`,
-    opacity: t.opacity / 100,
-  };
 }
 
 function ProgramOverlay() {
@@ -87,9 +77,6 @@ export function ProgramMonitor() {
   const decodeScale = useUiState((s) => s.playbackDecodeScale);
   const timeFormat = useTimeDisplayFormat();
   const playing = usePlaybackState((s) => s.playing);
-  const clipId = usePlaybackState((s) => s.programClipId);
-  const clip = useProjectState((s) => (clipId ? getActiveSequence(s.project)?.clips[clipId] : undefined));
-
   useEffect(() => {
     const video = videoRef.current;
     const audio = audioRef.current;
@@ -130,11 +117,12 @@ export function ProgramMonitor() {
         >
           <video
             ref={videoRef}
-            className="absolute inset-0 h-full w-full object-contain"
-            style={sequence ? clipStyle(clip, sequence) : undefined}
-            aria-label="Program monitor video"
+            className="pointer-events-none absolute inset-0 h-full w-full object-contain opacity-0"
+            aria-hidden
+            tabIndex={-1}
             data-testid="program-video"
           />
+          {sequence ? <ProgramCompositeLayers sequence={sequence} /> : null}
           <audio ref={audioRef} className="sr-only" aria-hidden tabIndex={-1} />
         </div>
         <ProgramOverlay />

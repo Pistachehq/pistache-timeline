@@ -108,7 +108,10 @@ export const TrackLane = memo(function TrackLane({
     if (track.locked || !event.dataTransfer.types.includes(ASSET_DRAG_TYPE)) return false;
     const assetId = runtime.stores.ui.getState().assetDrag;
     const asset = assetId ? runtime.stores.project.getState().project.mediaAssets[assetId] : undefined;
-    return !!asset && (track.kind === 'video' ? asset.hasVideo : asset.hasAudio);
+    return (
+      !!asset &&
+      (track.kind === 'video' ? asset.hasVideo || asset.kind === 'image' : asset.hasAudio)
+    );
   };
 
 
@@ -235,7 +238,8 @@ export const TrackLane = memo(function TrackLane({
           void (async () => {
             const assets = await runtime.actions.media.importLocalFiles(files);
             for (const asset of assets) {
-              const compatible = track.kind === 'video' ? asset.hasVideo : asset.hasAudio;
+              const compatible =
+                track.kind === 'video' ? asset.hasVideo || asset.kind === 'image' : asset.hasAudio;
               if (compatible) runtime.actions.edit.placeAssetOnTrack(asset.id, track.id, frame);
             }
           })();

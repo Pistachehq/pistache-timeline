@@ -1,20 +1,26 @@
 import { type MediaAsset, mediaTimeToSeconds } from '@timeline/core';
 import { formatBytes, formatSeconds } from '@timeline/shared';
 import { cn, IconButton } from '@timeline/ui';
-import { AudioLines, Film, Link2Off, ListPlus, Loader2, Trash2 } from 'lucide-react';
+import { AudioLines, Film, ImageIcon, Link2Off, ListPlus, Loader2, Trash2 } from 'lucide-react';
 import { memo } from 'react';
 import { useMediaState, useRuntime, useSelectionState } from '../../runtime/context';
 import { ASSET_DRAG_TYPE } from '../dnd';
 
 function Thumbnail({ asset }: { asset: MediaAsset }) {
   const entry = useMediaState((s) => s.entries[asset.id]);
-  const Icon = asset.hasVideo ? Film : AudioLines;
+  const Icon = asset.kind === 'image' ? ImageIcon : asset.hasVideo ? Film : AudioLines;
+  const iconClass =
+    asset.kind === 'image'
+      ? 'text-fg-muted'
+      : asset.hasVideo
+        ? 'text-clip-video-strong'
+        : 'text-clip-audio-strong';
   return (
     <div className="relative flex h-9 w-16 shrink-0 items-center justify-center overflow-hidden rounded-xs bg-surface-0">
       {entry?.thumbnail ? (
         <img src={entry.thumbnail} alt="" className="h-full w-full object-cover" draggable={false} />
       ) : (
-        <Icon className={cn('size-4', asset.hasVideo ? 'text-clip-video-strong' : 'text-clip-audio-strong')} />
+        <Icon className={cn('size-4', iconClass)} />
       )}
       {entry?.status === 'resolving' ? (
         <Loader2 className="absolute size-3.5 animate-spin text-fg-muted" />
@@ -26,6 +32,7 @@ function Thumbnail({ asset }: { asset: MediaAsset }) {
 function describe(asset: MediaAsset): string {
   const parts = [formatSeconds(mediaTimeToSeconds(asset.duration))];
   if (asset.resolution) parts.push(`${asset.resolution.width}×${asset.resolution.height}`);
+  else if (asset.kind === 'image') parts.push('Image');
   else parts.push('Audio');
   parts.push(formatBytes(asset.source.size));
   return parts.join(' · ');

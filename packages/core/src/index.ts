@@ -3,6 +3,7 @@ export * from './time/timecode';
 
 export * from './model/types';
 export * from './model/defaults';
+export * from './audio/gain';
 export * from './model/factory';
 export * from './model/queries';
 export * from './model/invariants';

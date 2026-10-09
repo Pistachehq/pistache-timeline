@@ -2,7 +2,7 @@ import {
   framesToSeconds,
   frameRateToNumber,
   getSequence,
-  getTopmostVideoClipAt,
+  getStackedVideoClipsAt,
   type Clip,
   type FrameRate,
   type MediaAssetId,
@@ -12,7 +12,7 @@ import { TimelineError, throwIfAborted } from '@timeline/shared';
 import { ArrayBufferTarget, Muxer } from 'webm-muxer';
 import { type ExportOptions, type ExportRequest, type ExportResult } from '../../types';
 import { waitForMediaEvent } from '../media-element';
-import { drawGapFrame, drawProgramFrame } from './compose-frame';
+import { drawGapFrame, drawStackedProgramFrame } from './compose-frame';
 import { type BrowserExportContext } from './export-context';
 import { encodeMixedAudioToMuxer, EXPORT_AUDIO_SAMPLE_RATE, mixSequenceAudio } from './export-audio-mix';
 import { getExportFrameCount, sequenceFrameForOutputFrame, validateExportOutput } from './export-output';
@@ -33,6 +33,17 @@ async function seekVideoForExport(video: HTMLVideoElement, seconds: number, sign
   video.currentTime = seconds;
   await seeked;
   await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+}
+
+async function loadImage(handle: { url: string }, signal?: AbortSignal): Promise<HTMLImageElement> {
+  throwIfAborted(signal);
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new TimelineError('UNSUPPORTED_MEDIA', 'Could not load an image for export.'));
+    if (!handle.url.startsWith('blob:')) img.crossOrigin = 'anonymous';
+    img.src = handle.url;
+  });
 }
 
 async function loadVideo(handle: { url: string }, signal?: AbortSignal): Promise<HTMLVideoElement> {
@@ -127,15 +138,20 @@ export async function exportSequenceToWebm(
   const drawOptions = { width, height, sequence };
 
   const videos = new Map<MediaAssetId, HTMLVideoElement>();
+  const images = new Map<MediaAssetId, HTMLImageElement>();
   for (const assetId of uniqueVideoAssetIds(sequence)) {
     throwIfAborted(signal);
     const asset = request.project.mediaAssets[assetId];
-    if (!asset?.hasVideo) continue;
+    if (!asset) continue;
     const handle = await context.resolve(asset.source);
     if (!handle) {
       throw new TimelineError('MEDIA_UNAVAILABLE', `${asset.name} is offline and cannot be exported.`);
     }
-    videos.set(assetId, await loadVideo(handle, signal));
+    if (asset.kind === 'image') {
+      images.set(assetId, await loadImage(handle, signal));
+    } else if (asset.hasVideo) {
+      videos.set(assetId, await loadVideo(handle, signal));
+    }
   }
 
   const canvas = document.createElement('canvas');
@@ -196,27 +212,22 @@ export async function exportSequenceToWebm(
 
   const videoProgressStart = audioMix ? 0.4 : 0;
   const videoProgressSpan = audioMix ? 0.55 : 1;
-  let lastSeekKey = '';
-
   for (let outFrame = 0; outFrame < outputFrames; outFrame++) {
     throwIfAborted(signal);
     throwEncoderFailure(encoderError);
 
     const seqFrame = sequenceFrameForOutputFrame(outFrame, outputFrameRate, sequence);
-    const active = getTopmostVideoClipAt(sequence, seqFrame);
-    if (active) {
-      const video = videos.get(active.clip.assetId);
-      if (video) {
-        const seconds = sourceTimeForFrame(active.clip, seqFrame, sequence.frameRate);
-        const seekKey = `${active.clip.id}:${seqFrame}`;
-        if (seekKey !== lastSeekKey) {
-          await seekVideoForExport(video, seconds, signal);
-          lastSeekKey = seekKey;
-        }
-        drawProgramFrame(ctx, drawOptions, active.clip, video);
-      } else {
-        drawGapFrame(ctx, width, height);
+    const stack = getStackedVideoClipsAt(sequence, seqFrame);
+    if (stack.length > 0) {
+      for (const { clip } of stack) {
+        const asset = request.project.mediaAssets[clip.assetId];
+        if (!asset || asset.kind === 'image') continue;
+        const video = videos.get(clip.assetId);
+        if (!video) continue;
+        const seconds = sourceTimeForFrame(clip, seqFrame, sequence.frameRate);
+        await seekVideoForExport(video, seconds, signal);
       }
+      drawStackedProgramFrame(ctx, drawOptions, stack, request.project.mediaAssets, videos, images);
     } else {
       drawGapFrame(ctx, width, height);
     }

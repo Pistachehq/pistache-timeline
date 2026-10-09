@@ -19,13 +19,14 @@ const THUMBNAIL_WIDTH = 192;
 const THUMBNAIL_TIME_SECONDS = 1;
 
 function assetFromProbe(picked: PickedMedia, metadata: MediaMetadata): MediaAsset {
+  const kind = picked.kind;
   return createMediaAsset({
     name: stripExtension(picked.source.fileName),
-    kind: metadata.hasVideo ? 'video' : 'audio',
+    kind,
     source: picked.source,
     duration: mediaTimeFromSeconds(metadata.durationSeconds),
-    hasVideo: metadata.hasVideo,
-    hasAudio: metadata.hasAudio,
+    hasVideo: kind === 'video' && metadata.hasVideo,
+    hasAudio: kind === 'audio' || (kind === 'video' && metadata.hasAudio),
     resolution: metadata.width && metadata.height ? { width: metadata.width, height: metadata.height } : null,
     frameRate: metadata.frameRate,
     metadata: {
@@ -42,12 +43,16 @@ export function createMediaActions(services: EditorServices) {
   const engine = platform.media;
   const { project: projectStore, media, ui, selection } = services.stores;
 
-  const generateThumbnail = async (assetId: MediaAssetId, handle: MediaHandle) => {
+  const generateThumbnail = async (assetId: MediaAssetId, handle: MediaHandle, kind: MediaAsset['kind']) => {
     try {
-      const thumbnail = await engine.createThumbnail(handle, {
-        timeSeconds: THUMBNAIL_TIME_SECONDS,
-        maxWidth: THUMBNAIL_WIDTH,
-      });
+      const thumbnail = await engine.createThumbnail(
+        handle,
+        {
+          timeSeconds: THUMBNAIL_TIME_SECONDS,
+          maxWidth: THUMBNAIL_WIDTH,
+        },
+        kind,
+      );
       if (thumbnail) media.getState().setEntry(assetId, { thumbnail: thumbnail.url });
     } catch (error) {
       if (!isAbortError(error)) console.warn(`Thumbnail failed for ${assetId}:`, error);
@@ -65,7 +70,7 @@ export function createMediaActions(services: EditorServices) {
 
   const markOnline = (asset: MediaAsset, handle: MediaHandle) => {
     media.getState().setEntry(asset.id, { status: 'online', handle, error: null });
-    if (asset.hasVideo) void generateThumbnail(asset.id, handle);
+    if (asset.hasVideo || asset.kind === 'image') void generateThumbnail(asset.id, handle, asset.kind);
     if (asset.hasAudio) void generateWaveform(asset.id, handle);
   };
 
@@ -137,6 +142,22 @@ export function createMediaActions(services: EditorServices) {
       }
     },
 
+    async importMediaFolder(): Promise<MediaAsset[]> {
+      try {
+        const result = await engine.pickMediaFolder();
+        if (result.files.length === 0 && result.rejected.length === 0) return [];
+        const label = result.files.length > 1 ? 'Import Folder' : 'Import File';
+        return importPickedFiles(
+          result.files,
+          result.rejected.map((r) => `${r.fileName}: ${r.reason}`),
+          label,
+        );
+      } catch (error) {
+        ui.getState().notify(`Could not open the folder picker: ${toErrorMessage(error)}`, 'error');
+        return [];
+      }
+    },
+
     /** Imports files from drag-and-drop (Explorer/Finder → project or timeline). */
     async importLocalFiles(files: readonly File[]): Promise<MediaAsset[]> {
       if (files.length === 0) return [];
@@ -192,6 +213,11 @@ export function createMediaActions(services: EditorServices) {
       const metadata = await probe(picked);
       if (typeof metadata === 'string') {
         ui.getState().notify(`Could not relink ${asset.name}: ${metadata}`, 'error');
+        return false;
+      }
+      if (asset.kind === 'image' && picked.kind !== 'image') {
+        engine.release(picked.handle);
+        ui.getState().notify(`${picked.source.fileName} is not an image and cannot replace ${asset.name}.`, 'error');
         return false;
       }
       if (asset.hasVideo && !metadata.hasVideo) {

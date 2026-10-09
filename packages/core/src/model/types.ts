@@ -29,7 +29,7 @@ export type ClipId = Brand<string, 'ClipId'>;
 export type MediaAssetId = Brand<string, 'MediaAssetId'>;
 
 export type TrackKind = 'video' | 'audio';
-export type MediaKind = 'video' | 'audio';
+export type MediaKind = 'video' | 'audio' | 'image';
 
 export interface Resolution {
   readonly width: number;
@@ -85,7 +85,7 @@ export interface ClipTransform {
 }
 
 export interface ClipAudio {
-  /** Linear volume in percent, 0–100. */
+  /** Linear volume in percent (100 = 0 dB, up to ~400 ≈ +12 dB). */
   readonly volume: number;
   readonly muted: boolean;
   /** Stereo balance, -100 (left) to 100 (right). */
@@ -129,6 +129,8 @@ export interface VideoTrack extends TrackBase {
 export interface AudioTrack extends TrackBase {
   readonly kind: 'audio';
   readonly muted: boolean;
+  /** Track fader in percent, 0–100 (100% = 0 dB). */
+  readonly volume: number;
 }
 
 export type Track = VideoTrack | AudioTrack;

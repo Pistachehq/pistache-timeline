@@ -8,6 +8,8 @@ import {
   getClipDuration,
   type Sequence,
   TRANSFORM_LIMITS,
+  volumeDbToPercent,
+  volumePercentToDb,
 } from '@timeline/core';
 import { IconButton, NumberField } from '@timeline/ui';
 import { RotateCcw, Volume2, VolumeX } from 'lucide-react';
@@ -51,6 +53,8 @@ export function ClipInspector({ clip, sequence }: { clip: Clip; sequence: Sequen
   const timeFormat = useTimeDisplayFormat();
   const t = (frame: number) => formatDisplayTime(frame, rate, timeFormat);
   const isVideo = track?.kind === 'video';
+  const isAudioTrack = track?.kind === 'audio';
+  const clipDb = volumePercentToDb(clip.audio.volume);
 
   const transformField = (spec: FieldSpec<keyof ClipTransform>) => (
     <NumberField
@@ -70,6 +74,11 @@ export function ClipInspector({ clip, sequence }: { clip: Clip; sequence: Sequen
   );
 
   const setAudio = (audio: Partial<ClipAudio>, label: string) => edit.setClipAudio(clip.id, audio, label);
+
+  const setTrackVolume = (volume: number) => {
+    if (!track || track.kind !== 'audio') return;
+    edit.updateTrack(track.id, { volume }, 'Change Track Volume');
+  };
 
   return (
     <div data-testid="clip-inspector">
@@ -110,31 +119,84 @@ export function ClipInspector({ clip, sequence }: { clip: Clip; sequence: Sequen
         </>
       ) : null}
 
-      <InspectorSection title="Audio" note={isVideo ? 'Embedded audio' : 'Playback not supported yet'}>
-        <div className="flex items-center gap-1">
+      {isAudioTrack ? (
+        <InspectorSection title="Audio">
+          <div className="flex items-center gap-1">
+            <NumberField
+              className="flex-1"
+              label="Volume"
+              value={clip.audio.volume}
+              min={AUDIO_LIMITS.volume.min}
+              step={0.5}
+              precision={0}
+              unit="%"
+              disabled={locked}
+              onScrubStart={() => edit.beginTransaction('Change Volume')}
+              onScrubEnd={() => edit.commitTransaction()}
+              onChange={(volume) => setAudio({ volume }, 'Change Volume')}
+            />
+            <IconButton
+              label={clip.audio.muted ? 'Unmute clip' : 'Mute clip'}
+              icon={clip.audio.muted ? <VolumeX /> : <Volume2 />}
+              pressed={clip.audio.muted}
+              disabled={locked}
+              onClick={() => setAudio({ muted: !clip.audio.muted }, clip.audio.muted ? 'Unmute Clip' : 'Mute Clip')}
+            />
+          </div>
           <NumberField
-            className="flex-1"
-            label="Volume"
-            value={clip.audio.volume}
-            {...AUDIO_LIMITS.volume}
+            label="Level"
+            value={clipDb}
+            min={AUDIO_LIMITS.gainDb.min}
+            step={0.1}
+            precision={1}
+            unit="dB"
+            disabled={locked}
+            onScrubStart={() => edit.beginTransaction('Change Volume')}
+            onScrubEnd={() => edit.commitTransaction()}
+            onChange={(db) => setAudio({ volume: volumeDbToPercent(db) }, 'Change Volume')}
+          />
+          <NumberField
+            label="Pan"
+            value={clip.audio.pan}
+            {...AUDIO_LIMITS.pan}
+            step={1}
+            precision={0}
+            disabled={locked}
+            onScrubStart={() => edit.beginTransaction('Change Pan')}
+            onScrubEnd={() => edit.commitTransaction()}
+            onChange={(pan) => setAudio({ pan }, 'Change Pan')}
+          />
+        </InspectorSection>
+      ) : null}
+
+      {isAudioTrack ? (
+        <InspectorSection title={`Track ${track.name}`}>
+          <NumberField
+            label="Track volume"
+            value={track.volume}
+            min={AUDIO_LIMITS.volume.min}
             step={0.5}
             precision={0}
             unit="%"
             disabled={locked}
-            onScrubStart={() => edit.beginTransaction('Change Volume')}
+            onScrubStart={() => edit.beginTransaction('Change Track Volume')}
             onScrubEnd={() => edit.commitTransaction()}
-            onChange={(volume) => setAudio({ volume }, 'Change Volume')}
+            onChange={setTrackVolume}
           />
-          <IconButton
-            label={clip.audio.muted ? 'Unmute clip' : 'Mute clip'}
-            icon={clip.audio.muted ? <VolumeX /> : <Volume2 />}
-            pressed={clip.audio.muted}
+          <NumberField
+            label="Track level"
+            value={volumePercentToDb(track.volume)}
+            min={AUDIO_LIMITS.gainDb.min}
+            step={0.1}
+            precision={1}
+            unit="dB"
             disabled={locked}
-            onClick={() => setAudio({ muted: !clip.audio.muted }, clip.audio.muted ? 'Unmute Clip' : 'Mute Clip')}
+            onScrubStart={() => edit.beginTransaction('Change Track Volume')}
+            onScrubEnd={() => edit.commitTransaction()}
+            onChange={(db) => setTrackVolume(volumeDbToPercent(db))}
           />
-        </div>
-        <NumberField label="Pan (not supported yet)" value={clip.audio.pan} {...AUDIO_LIMITS.pan} precision={0} disabled onChange={() => undefined} />
-      </InspectorSection>
+        </InspectorSection>
+      ) : null}
 
       <InspectorSection title="Effects">
         <p className="py-1 text-xs text-fg-subtle">Effects, keyframes and color correction are not available yet.</p>

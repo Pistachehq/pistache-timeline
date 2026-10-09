@@ -56,6 +56,7 @@ export function createAudioTrack(index: number, id: TrackId = newTrackId()): Aud
     enabled: true,
     locked: false,
     muted: false,
+    volume: 100,
     clipIds: [],
   };
 }
