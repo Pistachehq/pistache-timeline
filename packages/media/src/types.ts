@@ -126,6 +126,8 @@ export interface ExportOptions {
 
 export interface ExportResult {
   readonly displayName: string;
+  /** True when the video frames were encoded with a hardware H.264 encoder. */
+  readonly hardwareAccelerated: boolean;
 }
 
 export interface MediaCapabilities {
@@ -136,7 +138,7 @@ export interface MediaCapabilities {
   readonly thumbnails: boolean;
   /** Frame-accurate decoding (WebCodecs / FFmpeg). Not implemented yet. */
   readonly frameDecoding: boolean;
-  /** Rendering a sequence to a file (WebM/VP9 via WebCodecs where supported). */
+  /** Rendering a sequence to a file (H.264 or WebM via WebCodecs where supported). */
   readonly export: boolean;
 }
 

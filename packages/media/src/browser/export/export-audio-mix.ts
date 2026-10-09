@@ -17,6 +17,7 @@ import {
 } from '@timeline/core';
 import { TimelineError, throwIfAborted } from '@timeline/shared';
 import { type ExportOptions } from '../../types';
+import { audioEncoderSupported } from './export-codecs';
 import { decodeAudioFromHandle } from './decode-audio';
 import { type BrowserExportContext } from './export-context';
 
@@ -150,6 +151,7 @@ export async function encodeMixedAudioToMuxer(
   mix: MixedAudio,
   muxer: { addAudioChunk(chunk: EncodedAudioChunk, meta?: EncodedAudioChunkMetadata): void },
   options: ExportOptions = {},
+  audioCodec: 'aac' | 'opus' = 'opus',
 ): Promise<void> {
   const { signal, onProgress } = options;
   throwIfAborted(signal);
@@ -158,15 +160,13 @@ export async function encodeMixedAudioToMuxer(
     throw new TimelineError('NOT_IMPLEMENTED', 'Exporting audio requires AudioEncoder (WebCodecs) support.');
   }
 
-  const supported = await AudioEncoder.isConfigSupported({
-    codec: 'opus',
-    sampleRate: mix.sampleRate,
-    numberOfChannels: 2,
-    bitrate: 160_000,
-  });
-  if (!supported.supported) {
-    throw new TimelineError('NOT_IMPLEMENTED', 'Opus audio encoding is not supported in this browser.');
+  if (!(await audioEncoderSupported(audioCodec, mix.sampleRate))) {
+    throw new TimelineError('NOT_IMPLEMENTED', 'Audio encoding is not supported in this browser.');
   }
+  const encoderConfig: AudioEncoderConfig =
+    audioCodec === 'aac'
+      ? { codec: 'mp4a.40.2', sampleRate: mix.sampleRate, numberOfChannels: 2, bitrate: 192_000 }
+      : { codec: 'opus', sampleRate: mix.sampleRate, numberOfChannels: 2, bitrate: 160_000 };
 
   let encoderError: Error | null = null;
   const encoder = new AudioEncoder({
@@ -176,12 +176,7 @@ export async function encodeMixedAudioToMuxer(
     },
   });
 
-  encoder.configure({
-    codec: 'opus',
-    sampleRate: mix.sampleRate,
-    numberOfChannels: 2,
-    bitrate: 160_000,
-  });
+  encoder.configure(encoderConfig);
 
   const { left, right, sampleRate } = mix;
   const totalSamples = left.length;

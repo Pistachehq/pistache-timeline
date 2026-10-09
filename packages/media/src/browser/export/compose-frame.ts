@@ -9,7 +9,6 @@ import {
   type ActiveVideoClip,
   type Clip,
   type ClipText,
-  type MediaAsset,
   type Sequence,
 } from '@timeline/core';
 
@@ -63,13 +62,38 @@ export interface DrawFrameOptions {
  * Draws one program frame: letterboxed source video with clip transform,
  * matching the Program monitor's object-contain + transform stack.
  */
-type VisualSource = HTMLVideoElement | HTMLImageElement;
+export interface CanvasDrawable {
+  readonly width: number;
+  readonly height: number;
+  draw(ctx: CanvasRenderingContext2D, dx: number, dy: number, dw: number, dh: number): void;
+}
+
+type VisualSource = HTMLVideoElement | HTMLImageElement | CanvasDrawable;
+
+function isMediaElement(source: VisualSource): source is HTMLVideoElement | HTMLImageElement {
+  return source instanceof HTMLVideoElement || source instanceof HTMLImageElement;
+}
 
 function sourceDimensions(source: VisualSource): { width: number; height: number } {
   if (source instanceof HTMLVideoElement) {
     return { width: source.videoWidth, height: source.videoHeight };
   }
-  return { width: source.naturalWidth, height: source.naturalHeight };
+  if (source instanceof HTMLImageElement) {
+    return { width: source.naturalWidth, height: source.naturalHeight };
+  }
+  return { width: source.width, height: source.height };
+}
+
+function paintSource(
+  ctx: CanvasRenderingContext2D,
+  source: VisualSource,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+): void {
+  if (isMediaElement(source)) ctx.drawImage(source, x, y, width, height);
+  else source.draw(ctx, x, y, width, height);
 }
 
 export function drawProgramFrame(
@@ -95,7 +119,7 @@ export function drawProgramFrame(
   const fit = Math.min(width / vw, height / vh);
   const dw = vw * fit;
   const dh = vh * fit;
-  ctx.drawImage(source, -dw / 2, -dh / 2, dw, dh);
+  paintSource(ctx, source, -dw / 2, -dh / 2, dw, dh);
   ctx.restore();
 }
 
@@ -174,15 +198,13 @@ function drawTextClip(
   ctx.letterSpacing = '0px';
 }
 
-export function drawStackedProgramFrame(
+export async function drawStackedProgramFrame(
   ctx: CanvasRenderingContext2D,
   options: DrawFrameOptions,
   stack: readonly ActiveVideoClip[],
-  assets: Readonly<Record<MediaAsset['id'], MediaAsset>>,
-  videos: ReadonlyMap<MediaAsset['id'], HTMLVideoElement>,
-  images: ReadonlyMap<MediaAsset['id'], HTMLImageElement>,
   sequenceFrame: number,
-): void {
+  resolveSource: (clip: Clip) => Promise<VisualSource | null>,
+): Promise<void> {
   const { width, height } = options;
   drawGapFrame(ctx, width, height);
   for (const { clip } of stack) {
@@ -191,10 +213,7 @@ export function drawStackedProgramFrame(
       continue;
     }
     if (!clip.assetId) continue;
-    const asset = assets[clip.assetId];
-    if (!asset) continue;
-    const source =
-      asset.kind === 'image' ? images.get(clip.assetId) : asset.hasVideo ? videos.get(clip.assetId) : undefined;
+    const source = await resolveSource(clip);
     if (!source) continue;
     const { width: vw, height: vh } = sourceDimensions(source);
     if (vw <= 0 || vh <= 0) continue;
@@ -217,7 +236,7 @@ export function drawStackedProgramFrame(
     const dw = vw * fit;
     const dh = vh * fit;
     if (clipPath) clipCssPath(ctx, clipPath, dw, dh);
-    ctx.drawImage(source, -dw / 2, -dh / 2, dw, dh);
+    paintSource(ctx, source, -dw / 2, -dh / 2, dw, dh);
     ctx.restore();
     ctx.filter = 'none';
   }

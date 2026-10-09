@@ -8,15 +8,18 @@ import {
   type MediaAssetId,
   type Sequence,
 } from '@timeline/core';
-import { TimelineError, throwIfAborted } from '@timeline/shared';
-import { ArrayBufferTarget, Muxer } from 'webm-muxer';
+import { isAbortError, TimelineError, throwIfAborted } from '@timeline/shared';
+import { ArrayBufferTarget as Mp4Target, Muxer as Mp4Muxer } from 'mp4-muxer';
+import { ArrayBufferTarget as WebmTarget, Muxer as WebmMuxer } from 'webm-muxer';
 import { type ExportOptions, type ExportRequest, type ExportResult } from '../../types';
 import { waitForMediaEvent } from '../media-element';
-import { drawGapFrame, drawStackedProgramFrame } from './compose-frame';
+import { type CanvasDrawable, drawGapFrame, drawStackedProgramFrame } from './compose-frame';
 import { type BrowserExportContext } from './export-context';
+import { chooseVideoEncoder, type ChosenVideoEncoder } from './export-codecs';
 import { encodeMixedAudioToMuxer, EXPORT_AUDIO_SAMPLE_RATE, mixSequenceAudio } from './export-audio-mix';
 import { getExportFrameCount, sequenceFrameForOutputFrame, validateExportOutput } from './export-output';
 import { downloadExportBlob } from './save-export';
+import { openSequentialVideo, type SequentialFrameSource } from './sequential-video';
 
 export type { BrowserExportContext } from './export-context';
 
@@ -58,31 +61,41 @@ async function loadVideo(handle: { url: string }, signal?: AbortSignal): Promise
   return video;
 }
 
-async function drainVideoEncoder(encoder: VideoEncoder): Promise<void> {
-  while (encoder.encodeQueueSize > 0) {
-    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+const ENCODE_QUEUE_LIMIT = 8;
+
+async function waitForEncodeQueue(encoder: VideoEncoder, signal?: AbortSignal): Promise<void> {
+  while (encoder.encodeQueueSize >= ENCODE_QUEUE_LIMIT) {
+    throwIfAborted(signal);
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
   }
 }
 
-async function pickVideoCodec(width: number, height: number, fps: number): Promise<{ codec: string; muxerCodec: 'V_VP9' | 'V_VP8' }> {
-  const bitrate = Math.max(2_000_000, Math.round(width * height * fps * 0.08));
-  const vp9 = await VideoEncoder.isConfigSupported({
-    codec: 'vp09.00.10.08',
-    width,
-    height,
-    bitrate,
-    framerate: fps,
-  });
-  if (vp9.supported) return { codec: 'vp09.00.10.08', muxerCodec: 'V_VP9' };
-  const vp8 = await VideoEncoder.isConfigSupported({
-    codec: 'vp8',
-    width,
-    height,
-    bitrate,
-    framerate: fps,
-  });
-  if (vp8.supported) return { codec: 'vp8', muxerCodec: 'V_VP8' };
-  throw new TimelineError('NOT_IMPLEMENTED', 'Neither VP9 nor VP8 video encoding is supported in this browser.');
+function drawableFromImage(image: HTMLImageElement): CanvasDrawable {
+  return {
+    width: image.naturalWidth,
+    height: image.naturalHeight,
+    draw: (ctx, x, y, w, h) => {
+      ctx.drawImage(image, x, y, w, h);
+    },
+  };
+}
+
+function drawableFromVideo(video: HTMLVideoElement): CanvasDrawable {
+  return {
+    width: video.videoWidth,
+    height: video.videoHeight,
+    draw: (ctx, x, y, w, h) => {
+      ctx.drawImage(video, x, y, w, h);
+    },
+  };
+}
+
+async function blobFromUrl(url: string, signal?: AbortSignal): Promise<Blob> {
+  const response = await fetch(url, signal ? { signal } : {});
+  if (!response.ok) {
+    throw new TimelineError('MEDIA_UNAVAILABLE', 'Could not read a media file for export.');
+  }
+  return response.blob();
 }
 
 function uniqueVideoAssetIds(sequence: Sequence): MediaAssetId[] {
@@ -104,8 +117,9 @@ function sanitizeFileName(name: string): string {
 }
 
 /**
- * Renders the active sequence to WebM using WebCodecs (VP9 + Opus). Video
- * uses topmost-track compositing; audio mixes audio tracks and the program clip.
+ * Renders the active sequence with WebCodecs. Fast exports use H.264 (hardware
+ * when the device can); otherwise VP9 or VP8 in WebM. Video is decoded in order
+ * and the encoder stays a few frames ahead of the compositor.
  */
 export async function exportSequenceToWebm(
   request: ExportRequest,
@@ -115,10 +129,10 @@ export async function exportSequenceToWebm(
   const { signal, onProgress } = options;
   throwIfAborted(signal);
 
-  if (request.format.container !== 'webm') {
+  if (request.format.container !== 'webm' && request.format.container !== 'mp4') {
     throw new TimelineError(
       'NOT_IMPLEMENTED',
-      `Export to ${request.format.container} is not supported in the browser yet. Choose WebM.`,
+      `Export to ${request.format.container} is not supported in the browser yet. Choose WebM or MP4.`,
     );
   }
 
@@ -141,132 +155,190 @@ export async function exportSequenceToWebm(
 
   const videos = new Map<MediaAssetId, HTMLVideoElement>();
   const images = new Map<MediaAssetId, HTMLImageElement>();
-  for (const assetId of uniqueVideoAssetIds(sequence)) {
-    throwIfAborted(signal);
-    const asset = request.project.mediaAssets[assetId];
-    if (!asset) continue;
-    const handle = await context.resolve(asset.source);
-    if (!handle) {
-      throw new TimelineError('MEDIA_UNAVAILABLE', `${asset.name} is offline and cannot be exported.`);
+  const decoders = new Map<MediaAssetId, SequentialFrameSource>();
+
+  const releaseSources = () => {
+    for (const decoder of decoders.values()) decoder.close();
+    decoders.clear();
+    for (const video of videos.values()) {
+      video.pause();
+      video.removeAttribute('src');
+      video.load();
     }
-    if (asset.kind === 'image') {
-      images.set(assetId, await loadImage(handle, signal));
-    } else if (asset.hasVideo) {
-      videos.set(assetId, await loadVideo(handle, signal));
-    }
-  }
-
-  const canvas = document.createElement('canvas');
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) throw new TimelineError('UNKNOWN', 'Could not create an export canvas.');
-
-  const target = new ArrayBufferTarget();
-  const audioMix = await mixSequenceAudio(sequence, request.project, context, {
-    ...options,
-    onProgress: (p) => onProgress?.({ phase: 'audio', progress: p.progress * 0.25 }),
-  });
-
-  const videoCodec = await pickVideoCodec(width, height, fps);
-
-  const muxerOptions = {
-    target,
-    video: { codec: videoCodec.muxerCodec, width, height, frameRate: fps },
-    firstTimestampBehavior: 'offset' as const,
-    ...(audioMix
-      ? {
-          audio: {
-            codec: 'A_OPUS',
-            numberOfChannels: 2,
-            sampleRate: EXPORT_AUDIO_SAMPLE_RATE,
-          },
-        }
-      : {}),
+    videos.clear();
   };
-  const muxer = new Muxer(muxerOptions);
 
-  if (audioMix) {
-    await encodeMixedAudioToMuxer(audioMix, muxer, {
+  try {
+    for (const assetId of uniqueVideoAssetIds(sequence)) {
+      throwIfAborted(signal);
+      const asset = request.project.mediaAssets[assetId];
+      if (!asset) continue;
+      const handle = await context.resolve(asset.source);
+      if (!handle) {
+        throw new TimelineError('MEDIA_UNAVAILABLE', `${asset.name} is offline and cannot be exported.`);
+      }
+      if (asset.kind === 'image') {
+        images.set(assetId, await loadImage(handle, signal));
+      } else if (asset.hasVideo) {
+        let decoder: SequentialFrameSource | null = null;
+        try {
+          decoder = await openSequentialVideo(await blobFromUrl(handle.url, signal));
+        } catch (error) {
+          if (isAbortError(error)) throw error;
+          decoder = null;
+        }
+        if (decoder) decoders.set(assetId, decoder);
+        else videos.set(assetId, await loadVideo(handle, signal));
+      }
+    }
+
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new TimelineError('UNKNOWN', 'Could not create an export canvas.');
+
+    const audioMix = await mixSequenceAudio(sequence, request.project, context, {
       ...options,
-      onProgress: (p) => onProgress?.({ phase: 'audio', progress: 0.25 + p.progress * 0.15 }),
+      onProgress: (p) => onProgress?.({ phase: 'audio', progress: p.progress * 0.25 }),
     });
-  }
 
-  let encoderError: Error | null = null;
-  const encoder = new VideoEncoder({
-    output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
-    error: (error: Error) => {
-      encoderError = error;
-    },
-  });
+    const chosen = await chooseVideoEncoder(request.format, width, height, fps);
+    const { muxer, target } = createExportMuxer(chosen, width, height, fps, audioMix !== null);
 
-  encoder.configure({
-    codec: videoCodec.codec,
-    width,
-    height,
-    bitrate: Math.max(2_000_000, Math.round(width * height * fps * 0.08)),
-    framerate: fps,
-  });
+    if (audioMix) {
+      await encodeMixedAudioToMuxer(
+        audioMix,
+        muxer,
+        {
+          ...options,
+          onProgress: (p) => onProgress?.({ phase: 'audio', progress: 0.25 + p.progress * 0.15 }),
+        },
+        chosen.audioCodec,
+      );
+    }
 
-  onProgress?.({ phase: 'rendering', progress: audioMix ? 0.4 : 0 });
-  await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    let encoderError: Error | null = null;
+    const encoder = new VideoEncoder({
+      output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
+      error: (error: Error) => {
+        encoderError = error;
+      },
+    });
 
-  const videoProgressStart = audioMix ? 0.4 : 0;
-  const videoProgressSpan = audioMix ? 0.55 : 1;
-  for (let outFrame = 0; outFrame < outputFrames; outFrame++) {
-    throwIfAborted(signal);
+    encoder.configure(chosen.config);
+
+    onProgress?.({ phase: 'rendering', progress: audioMix ? 0.4 : 0 });
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+    const videoProgressStart = audioMix ? 0.4 : 0;
+    const videoProgressSpan = audioMix ? 0.55 : 1;
+    for (let outFrame = 0; outFrame < outputFrames; outFrame++) {
+      throwIfAborted(signal);
+      throwEncoderFailure(encoderError);
+
+      const seqFrame = sequenceFrameForOutputFrame(outFrame, outputFrameRate, sequence);
+      const stack = getStackedVideoClipsAt(sequence, seqFrame);
+      if (stack.length > 0) {
+        await drawStackedProgramFrame(ctx, drawOptions, stack, seqFrame, async (clip) => {
+          if (!clip.assetId) return null;
+          const asset = request.project.mediaAssets[clip.assetId];
+          if (!asset) return null;
+          if (asset.kind === 'image') {
+            const image = images.get(clip.assetId);
+            return image ? drawableFromImage(image) : null;
+          }
+          const seconds = sourceTimeForFrame(clip, seqFrame, sequence.frameRate);
+          const decoder = decoders.get(clip.assetId);
+          if (decoder) {
+            const sample = await decoder.frameAt(seconds);
+            if (!sample || sample.displayWidth <= 0 || sample.displayHeight <= 0) return null;
+            return {
+              width: sample.displayWidth,
+              height: sample.displayHeight,
+              draw: (drawCtx, x, y, w, h) => sample.draw(drawCtx, x, y, w, h),
+            };
+          }
+          const video = videos.get(clip.assetId);
+          if (!video) return null;
+          await seekVideoForExport(video, seconds, signal);
+          return drawableFromVideo(video);
+        });
+      } else {
+        drawGapFrame(ctx, width, height);
+      }
+
+      await waitForEncodeQueue(encoder, signal);
+      throwEncoderFailure(encoderError);
+      const videoFrame = new VideoFrame(canvas, {
+        timestamp: outFrame * frameDurationUs,
+        duration: frameDurationUs,
+      });
+      encoder.encode(videoFrame, { keyFrame: outFrame % keyFrameInterval === 0 });
+      videoFrame.close();
+
+      onProgress?.({
+        phase: 'rendering',
+        progress: videoProgressStart + ((outFrame + 1) / outputFrames) * videoProgressSpan,
+      });
+
+      if (outFrame % 8 === 0) {
+        await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      }
+    }
+
+    await encoder.flush();
     throwEncoderFailure(encoderError);
 
-    const seqFrame = sequenceFrameForOutputFrame(outFrame, outputFrameRate, sequence);
-    const stack = getStackedVideoClipsAt(sequence, seqFrame);
-    if (stack.length > 0) {
-      for (const { clip } of stack) {
-        if (!clip.assetId) continue;
-        const asset = request.project.mediaAssets[clip.assetId];
-        if (!asset || asset.kind === 'image') continue;
-        const video = videos.get(clip.assetId);
-        if (!video) continue;
-        const seconds = sourceTimeForFrame(clip, seqFrame, sequence.frameRate);
-        await seekVideoForExport(video, seconds, signal);
-      }
-      drawStackedProgramFrame(ctx, drawOptions, stack, request.project.mediaAssets, videos, images, seqFrame);
-    } else {
-      drawGapFrame(ctx, width, height);
-    }
+    onProgress?.({ phase: 'finalizing', progress: 1 });
+    muxer.finalize();
+    encoder.close();
 
-    const videoFrame = new VideoFrame(canvas, {
-      timestamp: outFrame * frameDurationUs,
-      duration: frameDurationUs,
+    const extension = chosen.container === 'mp4' ? 'mp4' : 'webm';
+    const fileName = `${sanitizeFileName(sequence.name)}.${extension}`;
+    const mime = chosen.container === 'mp4' ? 'video/mp4' : 'video/webm';
+    downloadExportBlob(new Blob([target.buffer], { type: mime }), fileName);
+    return { displayName: fileName, hardwareAccelerated: chosen.accelerated };
+  } finally {
+    releaseSources();
+  }
+}
+
+interface ExportMuxer {
+  addVideoChunk(chunk: EncodedVideoChunk, meta?: EncodedVideoChunkMetadata): void;
+  addAudioChunk(chunk: EncodedAudioChunk, meta?: EncodedAudioChunkMetadata): void;
+  finalize(): void;
+}
+
+function createExportMuxer(
+  chosen: ChosenVideoEncoder,
+  width: number,
+  height: number,
+  fps: number,
+  withAudio: boolean,
+): { muxer: ExportMuxer; target: { buffer: ArrayBuffer } } {
+  if (chosen.container === 'mp4') {
+    const target = new Mp4Target();
+    const muxer = new Mp4Muxer({
+      target,
+      video: { codec: 'avc', width, height, frameRate: fps },
+      fastStart: 'in-memory',
+      ...(withAudio
+        ? { audio: { codec: chosen.audioCodec, numberOfChannels: 2, sampleRate: EXPORT_AUDIO_SAMPLE_RATE } }
+        : {}),
     });
-    encoder.encode(videoFrame, { keyFrame: outFrame % keyFrameInterval === 0 });
-    videoFrame.close();
-    await drainVideoEncoder(encoder);
-
-    onProgress?.({
-      phase: 'rendering',
-      progress: videoProgressStart + ((outFrame + 1) / outputFrames) * videoProgressSpan,
-    });
-
-    if (outFrame % 4 === 0) {
-      await new Promise<void>((resolve) => setTimeout(resolve, 0));
-    }
+    return { muxer, target };
   }
 
-  await encoder.flush();
-  throwEncoderFailure(encoderError);
-
-  onProgress?.({ phase: 'finalizing', progress: 1 });
-  muxer.finalize();
-  encoder.close();
-
-  for (const video of videos.values()) {
-    video.pause();
-    video.removeAttribute('src');
-    video.load();
-  }
-
-  const fileName = `${sanitizeFileName(sequence.name)}.webm`;
-  downloadExportBlob(new Blob([target.buffer], { type: 'video/webm' }), fileName);
-  return { displayName: fileName };
+  const target = new WebmTarget();
+  const webmCodec = chosen.webmCodec ?? 'V_VP9';
+  const muxer = new WebmMuxer({
+    target,
+    video: { codec: webmCodec, width, height, frameRate: fps },
+    firstTimestampBehavior: 'offset',
+    ...(withAudio
+      ? { audio: { codec: 'A_OPUS' as const, numberOfChannels: 2, sampleRate: EXPORT_AUDIO_SAMPLE_RATE } }
+      : {}),
+  });
+  return { muxer, target };
 }

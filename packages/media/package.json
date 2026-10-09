@@ -17,6 +17,8 @@
   "dependencies": {
     "@timeline/core": "workspace:*",
     "@timeline/shared": "workspace:*",
+    "mediabunny": "^1.61.3",
+    "mp4-muxer": "^5.2.2",
     "webm-muxer": "5.1.4"
   },
   "devDependencies": {

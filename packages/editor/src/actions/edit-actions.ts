@@ -12,6 +12,7 @@ import {
   getAssetFrameCount,
   getSequence,
   getSplittableClipsAt,
+  isRangeFree,
   pairedAudioTrack,
   pairedVideoTrack,
   updateSequence,
@@ -466,16 +467,40 @@ export function createEditActions(services: EditorServices) {
         return null;
       }
       const clipId = newClipId();
-      const result = projectStore.getState().apply('Add Text', (project) =>
-        addTextClip(project, {
-          sequenceId: sequence.id,
-          trackId: input.trackId,
+      const result = projectStore.getState().apply('Add Text', (project) => {
+        const current = getSequence(project, sequence.id);
+        if (!current) return addTextClip(project, { sequenceId: sequence.id, trackId: input.trackId, start: input.start, clipId });
+        const fps = current.frameRate.numerator / current.frameRate.denominator;
+        const duration = Math.max(1, Math.round(fps * 5));
+        const target = findTrack(current, input.trackId);
+        const holdsPicture =
+          target?.kind === 'video' &&
+          target.clipIds.some((id) => {
+            const clip = current.clips[id];
+            return clip !== undefined && clip.text === null;
+          });
+        const occupied =
+          target?.kind === 'video' &&
+          !target.locked &&
+          (holdsPicture || !isRangeFree(current, target, input.start, duration));
+        let working = project;
+        let trackId = input.trackId;
+        if (occupied) {
+          const added = addTrack(working, { sequenceId: current.id, kind: 'video' });
+          if (!added.ok) return added;
+          working = added.value;
+          const created = getSequence(working, current.id)?.videoTracks.at(-1);
+          if (created) trackId = created.id;
+        }
+        return addTextClip(working, {
+          sequenceId: current.id,
+          trackId,
           start: input.start,
           clipId,
           ...(input.positionX !== undefined ? { positionX: input.positionX } : {}),
           ...(input.positionY !== undefined ? { positionY: input.positionY } : {}),
-        }),
-      );
+        });
+      });
       if (!result.ok) {
         ui.getState().notify(result.error.message, result.error.code === 'LOCKED' ? 'warning' : 'error');
         return null;
