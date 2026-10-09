@@ -21,7 +21,7 @@ export async function exportBrowserSequence(
   if (!browserExportSupported()) {
     throw new TimelineError(
       'NOT_IMPLEMENTED',
-      'Exporting requires WebCodecs (VP9) support in this browser. Try the latest Chrome or Edge.',
+      'Exporting requires WebCodecs support in this browser. Try the latest Chrome or Edge.',
     );
   }
   return exportSequenceToWebm(request, exporter, options);

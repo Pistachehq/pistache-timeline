@@ -37,13 +37,26 @@ function phaseLabel(phase: ExportProgress['phase']): string {
   }
 }
 
+const FAST_FORMAT = {
+  container: 'mp4' as const,
+  videoCodec: 'avc',
+  audioCodec: 'aac',
+};
+
 const WEBM_FORMAT = {
   container: 'webm' as const,
   videoCodec: 'vp9',
   audioCodec: 'opus',
 };
 
-/** Export active sequence to WebM (VP9 + Opus) when WebCodecs is available. */
+type ExportSpeed = 'fast' | 'compatible';
+
+const SPEED_OPTIONS: readonly { value: ExportSpeed; label: string }[] = [
+  { value: 'fast', label: 'Fast — H.264 (GPU when available)' },
+  { value: 'compatible', label: 'Compatible — WebM (VP9)' },
+];
+
+/** Export the active sequence. Fast mode encodes H.264, using the GPU when the device can. */
 export function ExportDialog({ onClose }: { onClose: () => void }) {
   const runtime = useRuntime();
   const sequence = useActiveSequence();
@@ -51,6 +64,7 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
   const timeFormat = useTimeDisplayFormat();
   const supported = runtime.platform.media.capabilities.export;
 
+  const [speed, setSpeed] = useState<ExportSpeed>('fast');
   const [resolutionPreset, setResolutionPreset] = useState<ExportResolutionPreset>('sequence');
   const [frameRatePreset, setFrameRatePreset] = useState<ExportFrameRatePreset>('sequence');
   const [customWidth, setCustomWidth] = useState(sequence?.resolution.width ?? 1920);
@@ -90,7 +104,7 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
         {
           project,
           sequenceId: sequence.id,
-          format: WEBM_FORMAT,
+          format: speed === 'fast' ? FAST_FORMAT : WEBM_FORMAT,
           output,
         },
         {
@@ -98,7 +112,8 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
           onProgress: setProgress,
         },
       );
-      runtime.stores.ui.getState().notify(`Saved ${result.displayName}`, 'success');
+      const how = result.hardwareAccelerated ? ' using the GPU' : '';
+      runtime.stores.ui.getState().notify(`Saved ${result.displayName}${how}`, 'success');
       onClose();
     } catch (error) {
       if (!isAbortError(error)) {
@@ -137,7 +152,7 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
                 Exporting…
               </>
             ) : (
-              'Export WebM'
+              'Export'
             )}
           </Button>
         </>
@@ -151,10 +166,20 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
               label="Duration"
               value={formatDisplayTime(getSequenceDuration(sequence), sequence.frameRate, timeFormat)}
             />
-            <Row label="Format" value="WebM (VP9 + Opus)" />
+            <Row label="Format" value={speed === 'fast' ? 'MP4 (H.264 + AAC)' : 'WebM (VP9 + Opus)'} />
           </dl>
 
           <div className="mb-3 grid gap-2 text-xs">
+            <label className="flex flex-col gap-1">
+              <span className="text-fg-subtle">Encoder</span>
+              <Select
+                label="Export encoder"
+                value={speed}
+                options={SPEED_OPTIONS}
+                onValueChange={setSpeed}
+                disabled={exporting}
+              />
+            </label>
             <label className="flex flex-col gap-1">
               <span className="text-fg-subtle">Resolution</span>
               <Select
@@ -237,12 +262,13 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
         <Info className="mt-0.5 size-3.5 shrink-0 text-accent" />
         {supported ? (
           <p>
-            Video follows the Program monitor (topmost visible clip); empty video areas are black. Audio mixes all
-            unmuted audio tracks plus the program clip. Long exports can take several minutes — keep this tab open.
+            Fast export reads each video straight through and encodes H.264 on the GPU when this device supports it.
+            If it does not, the file is still H.264 on the CPU, or WebM when H.264 is unavailable. Video follows the
+            Program monitor; empty areas are black. Keep this tab open until the export finishes.
           </p>
         ) : (
           <p>
-            Exporting requires WebCodecs with VP9 and Opus (recent Chrome or Edge).{' '}
+            Exporting requires WebCodecs (recent Chrome or Edge).{' '}
             {runtime.platform.kind === 'desktop'
               ? 'The desktop app uses the same renderer in Chromium; FFmpeg export is planned later.'
               : 'Other browsers may gain support in a future release.'}
