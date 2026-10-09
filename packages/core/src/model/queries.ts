@@ -50,6 +50,20 @@ export function getClipEnd(clip: Clip): number {
 }
 
 /**
+ * Next clip on the same track that continues the same media without a gap
+ * (typical razor split). Used for gapless playback across edit points.
+ */
+export function getSeamlessClipSuccessor(sequence: Sequence, clip: Clip): Clip | undefined {
+  const track = findTrack(sequence, clip.trackId);
+  if (!track) return undefined;
+  const end = getClipEnd(clip);
+  const next = getClipAtFrame(sequence, track, end);
+  if (!next || next.start !== end) return undefined;
+  if (next.assetId !== clip.assetId || next.sourceIn !== clip.sourceOut) return undefined;
+  return next;
+}
+
+/**
  * When `linkId` is set, audio is expected on the paired A-track clip only
  * (Premiere-style linked clip). The video file's embedded audio is not mixed in.
  */

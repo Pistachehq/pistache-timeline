@@ -1,7 +1,7 @@
 import { unwrap } from '@timeline/shared';
 import { describe, expect, it } from 'vitest';
 import { validateProjectInvariants } from '../model/invariants';
-import { getClipEnd, getSequenceDuration, getTopmostVideoClipAt } from '../model/queries';
+import { getClipEnd, getSeamlessClipSuccessor, getSequenceDuration, getTopmostVideoClipAt } from '../model/queries';
 import { type ClipId, type MediaAssetId, type Project, type TrackId } from '../model/types';
 import { activeSequence, setupProject } from '../test/fixtures';
 import {
@@ -132,6 +132,7 @@ describe('splitClip and removeClips', () => {
     expect([right.start, right.sourceIn, right.sourceOut]).toEqual([120, 120, 300]);
     expect(getClipEnd(left)).toBe(right.start);
     expect(next.videoTracks[0]!.clipIds).toEqual([CLIP_A, CLIP_B]);
+    expect(getSeamlessClipSuccessor(next, left)?.id).toBe(CLIP_B);
   });
 
   it('rejects split points on clip boundaries', () => {
