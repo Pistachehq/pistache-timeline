@@ -141,7 +141,14 @@ export function ProgramTextLayer({
           }}
         />
       ) : (
-        <span className="pointer-events-none block px-2 py-1">
+        <span
+          className="pointer-events-none block px-2 py-1"
+          style={
+            text.backgroundColor
+              ? { background: text.backgroundColor, borderRadius: '0.3em' }
+              : undefined
+          }
+        >
           {frame.runs.map((run, index) => (
             <span
               key={`${index}-${run.text}`}

@@ -324,6 +324,7 @@ function parseClipText(value: unknown, path: string): ClipText {
     shadow: obj.shadow == null ? null : parseTextShadow(obj.shadow, `${path}.shadow`),
     outlineWidth: obj.outlineWidth === undefined ? 0 : readNumber(obj, 'outlineWidth', path),
     outlineColor: obj.outlineColor === undefined ? DEFAULT_CLIP_TEXT.outlineColor : readString(obj, 'outlineColor', path),
+    backgroundColor: obj.backgroundColor == null ? null : readString(obj, 'backgroundColor', path),
     animation,
   };
 }
@@ -388,6 +389,7 @@ function parseClip(value: unknown, path: string): Clip {
     transitions: parseClipTransitions(obj.transitions, `${path}.transitions`),
     effects: parseClipEffects(obj.effects, `${path}.effects`),
     linkId: obj.linkId == null ? null : (readString(obj, 'linkId', path) as ClipId),
+    captionSourceId: obj.captionSourceId == null ? null : (readString(obj, 'captionSourceId', path) as ClipId),
   };
 }
 

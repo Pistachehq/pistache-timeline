@@ -15,6 +15,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@huggingface/transformers": "3.8.1",
     "@timeline/core": "workspace:*",
     "@timeline/media": "workspace:*",
     "@timeline/shared": "workspace:*",

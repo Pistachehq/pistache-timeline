@@ -17,6 +17,7 @@ import { Link2, RotateCcw, Unlink2, Volume2, VolumeX } from 'lucide-react';
 import { useTimeDisplayFormat } from '../../hooks/use-format-display-time';
 import { useRuntime } from '../../runtime/context';
 import { useAsset, useEditPlayhead } from '../../runtime/hooks';
+import { ClipCaptionsInspector } from './ClipCaptionsInspector';
 import { ClipCropInspector } from './ClipCropInspector';
 import { ClipTextInspector } from './ClipTextInspector';
 import { ClipEffectsInspector } from './ClipEffectsInspector';
@@ -207,6 +208,8 @@ export function ClipInspector({ clip, sequence }: { clip: Clip; sequence: Sequen
           </InspectorSection>
         </>
       ) : null}
+
+      {isAudioTrack && clip.assetId ? <ClipCaptionsInspector clip={clip} sequence={sequence} locked={locked} /> : null}
 
       {isAudioTrack ? (
         <InspectorSection title="Audio">

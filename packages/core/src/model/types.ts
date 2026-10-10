@@ -153,6 +153,8 @@ export interface Clip {
   readonly effects: import('./effects').ClipEffects;
   /** Optional paired clip on the other kind of track (video ↔ audio). */
   readonly linkId: ClipId | null;
+  /** Audio clip these words were generated from. `null` for ordinary clips. */
+  readonly captionSourceId: ClipId | null;
 }
 
 interface TrackBase {

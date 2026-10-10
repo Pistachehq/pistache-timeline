@@ -244,6 +244,9 @@ export function removeClips(project: Project, input: RemoveClipsInput): EditResu
   return updateSequence(project, input.sequenceId, (sequence) => {
     const ids = new Set(input.clipIds.filter((id) => sequence.clips[id]));
     if (ids.size === 0) return ok(sequence);
+    for (const clip of Object.values(sequence.clips)) {
+      if (clip.captionSourceId && ids.has(clip.captionSourceId)) ids.add(clip.id);
+    }
     for (const id of ids) {
       const track = findTrack(sequence, (sequence.clips[id]!).trackId);
       if (track?.locked) return fail('LOCKED', `Track ${track.name} is locked.`);
@@ -333,6 +336,7 @@ function splitClipInSequence(
       sourceIn: cut,
       sourceOut: clip.sourceOut,
       linkId: null,
+      ...(clip.captionSourceId ? { captionSourceId: clip.captionSourceId } : {}),
     }),
     enabled: clip.enabled,
     transform: clip.transform,

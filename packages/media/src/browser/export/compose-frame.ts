@@ -193,6 +193,25 @@ function drawTextClip(
     else lines[lines.length - 1]?.push(piece);
   }
   const lineHeight = text.fontSize * 1.2;
+  if (text.backgroundColor) {
+    const widths = lines.map((line) => line.reduce((sum, part) => sum + ctx.measureText(part.text).width, 0));
+    const maxW = Math.max(0, ...widths);
+    if (maxW > 0) {
+      const padX = text.fontSize * 0.45;
+      const padY = text.fontSize * 0.22;
+      const blockH = lines.length * lineHeight;
+      const x = text.align === 'center' ? -maxW / 2 : text.align === 'right' ? -maxW : 0;
+      ctx.save();
+      ctx.shadowColor = 'transparent';
+      ctx.fillStyle = text.backgroundColor;
+      ctx.beginPath();
+      const radius = text.fontSize * 0.28;
+      if (typeof ctx.roundRect === 'function') ctx.roundRect(x - padX, -blockH / 2 - padY, maxW + padX * 2, blockH + padY * 2, radius);
+      else ctx.rect(x - padX, -blockH / 2 - padY, maxW + padX * 2, blockH + padY * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+  }
   lines.forEach((line, index) => {
     const total = line.reduce((sum, part) => sum + ctx.measureText(part.text).width, 0);
     let x = text.align === 'center' ? -total / 2 : text.align === 'right' ? -total : 0;

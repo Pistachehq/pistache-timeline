@@ -1,8 +1,14 @@
 import {
+  addCaptionClips,
   addClip,
   addTextClip,
   addTrack,
+  captionDesignById,
+  captionPositionY,
+  DEFAULT_CAPTION_FONT_SIZE,
   applyMotionEdit,
+  type CaptionCue,
+  type CaptionDesignPatch,
   type Clip,
   type ClipAudio,
   type ClipId,
@@ -24,6 +30,7 @@ import {
   setClipSpeed,
   newClipId,
   type Project,
+  removeCaptionClips,
   removeClips,
   removeTrack as removeTrackOp,
   renameProject,
@@ -41,6 +48,7 @@ import {
   type TrackId,
   type TrackKind,
   mergeClipTransitions,
+  updateCaptionLook,
   updateClipAudio,
   updateClipEffects,
   updateClipText,
@@ -659,6 +667,63 @@ export function createEditActions(services: EditorServices, media: MediaActions)
       const result = projectStore.getState().apply('Rename Project', (project) => renameProject(project, name));
       if (!result.ok) ui.getState().notify(result.error.message, 'error');
       return result.ok;
+    },
+
+    removeCaptions(clipId: ClipId): boolean {
+      return run('Remove Captions', (project, sequence) => removeCaptionClips(project, sequence.id, clipId));
+    },
+
+    addCaptions(clipId: ClipId, cues: readonly CaptionCue[]): boolean {
+      return run('Add Captions', (project, sequence) => {
+        const cleared = removeCaptionClips(project, sequence.id, clipId);
+        if (!cleared.ok) return cleared;
+        let working = cleared.value;
+        const current = getSequence(working, sequence.id);
+        if (!current) return cleared;
+        const height = current.resolution.height;
+        let trackId: TrackId | undefined;
+        for (let index = current.videoTracks.length - 1; index >= 0; index--) {
+          const track = current.videoTracks[index];
+          if (!track || track.locked) continue;
+          if (cues.every((cue) => isRangeFree(current, track, cue.start, cue.durationFrames))) {
+            trackId = track.id;
+            break;
+          }
+        }
+        if (!trackId) {
+          const added = addTrack(working, { sequenceId: sequence.id, kind: 'video' });
+          if (!added.ok) return added;
+          working = added.value;
+          const created = getSequence(working, sequence.id)?.videoTracks.at(-1);
+          if (!created) return added;
+          trackId = created.id;
+        }
+        return addCaptionClips(working, {
+          sequenceId: sequence.id,
+          trackId,
+          captionSourceId: clipId,
+          positionY: captionPositionY('bottom', height),
+          fontSize: DEFAULT_CAPTION_FONT_SIZE,
+          text: captionDesignById('classic').text,
+          cues,
+        });
+      });
+    },
+
+    setCaptionLook(
+      clipId: ClipId,
+      look: { readonly text?: CaptionDesignPatch; readonly fontSize?: number; readonly positionY?: number },
+      label = 'Change Captions',
+    ): boolean {
+      return run(label, (project, sequence) =>
+        updateCaptionLook(project, {
+          sequenceId: sequence.id,
+          captionSourceId: clipId,
+          ...(look.text ? { text: look.text } : {}),
+          ...(look.fontSize !== undefined ? { fontSize: look.fontSize } : {}),
+          ...(look.positionY !== undefined ? { positionY: look.positionY } : {}),
+        }),
+      );
     },
 
     beginTransaction: (label: string) => projectStore.getState().beginTransaction(label),

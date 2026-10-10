@@ -156,6 +156,7 @@ export interface CreateClipOptions {
   readonly sourceIn: number;
   readonly sourceOut: number;
   readonly linkId?: ClipId | null;
+  readonly captionSourceId?: ClipId | null;
 }
 
 export function createClip(options: CreateClipOptions): Clip {
@@ -176,5 +177,6 @@ export function createClip(options: CreateClipOptions): Clip {
     transitions: DEFAULT_CLIP_TRANSITIONS,
     effects: DEFAULT_CLIP_EFFECTS,
     linkId: options.linkId ?? null,
+    captionSourceId: options.captionSourceId ?? null,
   };
 }

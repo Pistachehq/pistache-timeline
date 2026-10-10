@@ -1,19 +1,21 @@
 import { app, type Session } from 'electron';
 import { MEDIA_PROTOCOL } from '@timeline/shared';
 
+const SPEECH_MODEL_HOSTS = 'https://huggingface.co https://*.huggingface.co https://*.hf.co https://*.xethub.hf.co https://cdn.jsdelivr.net';
+
 const PRODUCTION_CSP = [
   "default-src 'self'",
-  "script-src 'self'",
+  "script-src 'self' 'wasm-unsafe-eval' https://cdn.jsdelivr.net",
   "style-src 'self' 'unsafe-inline'",
   `img-src 'self' data: blob: ${MEDIA_PROTOCOL}:`,
   `media-src 'self' blob: ${MEDIA_PROTOCOL}:`,
-  `connect-src 'self' ${MEDIA_PROTOCOL}:`,
+  `connect-src 'self' blob: ${MEDIA_PROTOCOL}: ${SPEECH_MODEL_HOSTS}`,
   "font-src 'self'",
   "object-src 'none'",
   "base-uri 'self'",
   "form-action 'self'",
   "frame-ancestors 'none'",
-  "worker-src 'none'",
+  "worker-src 'self' blob: https://cdn.jsdelivr.net",
 ].join('; ');
 
 function developmentCsp(devServerUrl: string): string {
@@ -21,11 +23,12 @@ function developmentCsp(devServerUrl: string): string {
   const ws = host.replace(/^http/, 'ws');
   return [
     "default-src 'self'",
-    `script-src 'self' 'unsafe-eval' 'unsafe-inline' ${host}`,
+    `script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval' 'unsafe-inline' ${host} https://cdn.jsdelivr.net`,
     "style-src 'self' 'unsafe-inline'",
     `img-src 'self' data: blob: ${MEDIA_PROTOCOL}: ${host}`,
     `media-src 'self' blob: ${MEDIA_PROTOCOL}: ${host}`,
-    `connect-src 'self' ${MEDIA_PROTOCOL}: ${host} ${ws}`,
+    `connect-src 'self' blob: ${MEDIA_PROTOCOL}: ${host} ${ws} ${SPEECH_MODEL_HOSTS}`,
+    "worker-src 'self' blob: https://cdn.jsdelivr.net",
     "font-src 'self'",
     "object-src 'none'",
     "base-uri 'self'",

@@ -79,6 +79,8 @@ export function validateProjectInvariants(project: Project): string[] {
       if (!owners.has(clip.id)) issues.push(`clip ${clipId} is not listed on any track`);
       if (clip.text) {
         if (clip.assetId) issues.push(`text clip ${clipId} should not reference a media asset`);
+      } else if (clip.captionSourceId) {
+        issues.push(`clip ${clipId} is marked as a caption but has no text`);
       } else if (!clip.assetId || !project.mediaAssets[clip.assetId]) {
         issues.push(`clip ${clipId} references missing media asset ${clip.assetId ?? 'none'}`);
       }
