@@ -4,8 +4,10 @@ import {
   cssFilterFromVideoEffects,
   effectiveClipOpacityPercent,
   evaluateClipTransform,
+  findTrack,
   getClipAtFrame,
   getClipEnd,
+  getSeamlessClipSuccessor,
   getStackedVideoClipsAt,
   libraryEffectClipPath,
   libraryEffectTransform,
@@ -148,9 +150,45 @@ function previousMediaClip(sequence: Sequence, track: VideoTrack, frame: number)
 }
 
 /**
+ * Stable key for one media element across a razor cut of the same file.
+ * A second element of that file stalls the one that is already playing.
+ */
+export function playbackElementKey(sequence: Sequence, clip: Clip): ClipId {
+  let current = clip;
+  const seen = new Set<ClipId>();
+  while (!seen.has(current.id)) {
+    seen.add(current.id);
+    if (current.start <= 0) return current.id;
+    const track = findTrack(sequence, current.trackId);
+    if (!track) return current.id;
+    const prev = getClipAtFrame(sequence, track, current.start - 1);
+    if (!prev || getClipEnd(prev) !== current.start) return current.id;
+    if (prev.assetId !== current.assetId || prev.sourceOut !== current.sourceIn) return current.id;
+    current = prev;
+  }
+  return clip.id;
+}
+
+/**
+ * The piece of a razor chain that covers `playhead`, starting from the clip
+ * whose element is already mounted. Playback can cross the cut before React
+ * swaps the layer.
+ */
+export function followSeamlessClip(sequence: Sequence, clip: Clip, playhead: number): Clip {
+  let current = clip;
+  for (let guard = 0; guard < 32; guard++) {
+    if (playhead < getClipEnd(current)) return current;
+    const next = getSeamlessClipSuccessor(sequence, current);
+    if (!next) return current;
+    current = next;
+  }
+  return current;
+}
+
+/**
  * Clips to keep mounted in Program: the current stack, the next media clip
  * (already seeked to its first frame), and the clip that just ended.
- * Keeping those elements alive avoids a black frame at the cut.
+ * A razor cut of the same file stays on the element that is already playing.
  */
 export function programPictureLayers(sequence: Sequence, frame: number): ProgramPictureLayer[] {
   const active = getStackedVideoClipsAt(sequence, frame);
@@ -163,19 +201,23 @@ export function programPictureLayers(sequence: Sequence, frame: number): Program
     if (!track.enabled || !track.visible) continue;
     const current = getClipAtFrame(sequence, track, frame);
     const next = nextMediaClip(sequence, track, frame);
-    if (next && !seen.has(next.id) && (current || next.start - frame <= horizon)) {
+    const continues =
+      current && !current.text ? getSeamlessClipSuccessor(sequence, current)?.id === next?.id : false;
+    if (next && !continues && !seen.has(next.id) && (current || next.start - frame <= horizon)) {
       seen.add(next.id);
       extras.push({ clip: next, track, role: 'warm' });
       if (getClipEnd(next) - next.start <= horizon) {
         const after = nextMediaClip(sequence, track, next.start);
-        if (after && !seen.has(after.id)) {
+        const afterContinues = getSeamlessClipSuccessor(sequence, next)?.id === after?.id;
+        if (after && !afterContinues && !seen.has(after.id)) {
           seen.add(after.id);
           extras.push({ clip: after, track, role: 'warm' });
         }
       }
     }
     const prev = previousMediaClip(sequence, track, frame);
-    if (prev && !seen.has(prev.id) && current && !current.text) {
+    const continued = prev && current && !current.text && getSeamlessClipSuccessor(sequence, prev)?.id === current.id;
+    if (prev && !continued && !seen.has(prev.id) && current && !current.text) {
       seen.add(prev.id);
       extras.push({ clip: prev, track, role: 'recent' });
     }

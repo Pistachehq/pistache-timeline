@@ -10,9 +10,9 @@ import {
 } from '@timeline/core';
 import { unwrap } from '@timeline/shared';
 import { describe, expect, it } from 'vitest';
-import { programLayerLive, programPictureLayers, programVideoUnready } from './program-clip-layout';
+import { followSeamlessClip, playbackElementKey, programLayerLive, programPictureLayers, programVideoUnready } from './program-clip-layout';
 
-function sequenceWithTwoClips() {
+function sequenceWithTwoClips(sourceIn = 90) {
   const asset = createMediaAsset({
     id: 'asset_video' as MediaAssetId,
     name: 'Interview',
@@ -51,8 +51,8 @@ function sequenceWithTwoClips() {
       trackId,
       assetId: asset.id,
       start: 30,
-      sourceIn: 30,
-      sourceOut: 60,
+      sourceIn,
+      sourceOut: sourceIn + 30,
       clipId: 'clip_b' as ClipId,
     }),
   );
@@ -71,6 +71,17 @@ describe('programPictureLayers', () => {
     const after = programPictureLayers(sequence, 30);
     expect(after.find((layer) => layer.clip.id === 'clip_b')?.role).toBe('active');
     expect(after.find((layer) => layer.clip.id === 'clip_a')?.role).toBe('recent');
+  });
+
+  it('keeps one picture element across a razor cut of the same file', () => {
+    const sequence = sequenceWithTwoClips(30);
+    const during = programPictureLayers(sequence, 10);
+    expect(during.map((layer) => layer.clip.id)).toEqual(['clip_a']);
+
+    const after = programPictureLayers(sequence, 30);
+    expect(after.map((layer) => layer.clip.id)).toEqual(['clip_b']);
+    expect(playbackElementKey(sequence, after[0]!.clip)).toBe('clip_a');
+    expect(followSeamlessClip(sequence, during[0]!.clip, 30).id).toBe('clip_b');
   });
 
   it('shows a warmed clip on the same frame the playhead enters it', () => {

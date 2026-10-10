@@ -123,13 +123,32 @@ async function detectSpokenLanguage(transcriber: AutomaticSpeechRecognitionPipel
   return spokenLanguage(Array.from(logits.data).slice(offset), languages);
 }
 
-async function recognizeSlice(
+function hasWordTimestamps(transcriber: AutomaticSpeechRecognitionPipeline): boolean {
+  const heads = (transcriber as unknown as { model?: { generation_config?: { alignment_heads?: unknown } } }).model
+    ?.generation_config?.alignment_heads;
+  return Array.isArray(heads) && heads.length > 0;
+}
+
+async function recognize(
   transcriber: AutomaticSpeechRecognitionPipeline,
   samples: Float32Array,
   language: string,
 ): Promise<AutomaticSpeechRecognitionOutput> {
-  const output = await transcriber(samples, { return_timestamps: true, task: 'transcribe', language });
-  return Array.isArray(output) ? (output[0] ?? { text: '' }) : output;
+  const shared = {
+    task: 'transcribe' as const,
+    language,
+    chunk_length_s: 30,
+    stride_length_s: 8,
+    num_beams: 5,
+  };
+  const timestamps = hasWordTimestamps(transcriber) ? 'word' : true;
+  try {
+    const output = await transcriber(samples, { ...shared, return_timestamps: timestamps });
+    return Array.isArray(output) ? (output[0] ?? { text: '' }) : output;
+  } catch {
+    const output = await transcriber(samples, { ...shared, return_timestamps: true });
+    return Array.isArray(output) ? (output[0] ?? { text: '' }) : output;
+  }
 }
 
 async function transcribeJob(job: TranscribeJob): Promise<void> {
@@ -159,24 +178,19 @@ async function transcribeJob(job: TranscribeJob): Promise<void> {
         return;
       }
     }
-    const pieces: TranscriptPiece[] = [];
-    const total = job.samples.length;
-    let offset = 0;
-    let windowIndex = 0;
-    const windows = Math.max(1, Math.ceil(total / WINDOW_SAMPLES));
-    while (offset < total) {
-      const end = Math.min(total, offset + WINDOW_SAMPLES);
-      const slice = job.samples.slice(offset, end);
-      phase = `Transcribing ${languageName(language)}… ${Math.round((windowIndex / windows) * 100)}%`;
-      scope.postMessage({ type: 'progress', id: job.id, message: phase });
-      const output = await recognizeSlice(transcriber, slice, language);
-      const shift = offset / SAMPLE_RATE;
-      for (const piece of piecesFrom(output, slice.length / SAMPLE_RATE)) {
-        pieces.push({ text: piece.text, start: piece.start + shift, end: piece.end + shift });
-      }
-      windowIndex += 1;
-      offset = end;
+    const started = Date.now();
+    phase = `Transcribing ${languageName(language)}…`;
+    scope.postMessage({ type: 'progress', id: job.id, message: phase });
+    const ticking = setInterval(() => {
+      phase = `Transcribing ${languageName(language)}… ${Math.round((Date.now() - started) / 1000)}s`;
+    }, 1000);
+    let output: AutomaticSpeechRecognitionOutput;
+    try {
+      output = await recognize(transcriber, job.samples, language);
+    } finally {
+      clearInterval(ticking);
     }
+    const pieces = piecesFrom(output, job.samples.length / SAMPLE_RATE);
     const text = pieces
       .map((piece) => piece.text)
       .join(' ')

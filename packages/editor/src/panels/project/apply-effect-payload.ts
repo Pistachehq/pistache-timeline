@@ -92,6 +92,13 @@ function applyEffects(
   return result.ok ? result.value : null;
 }
 
+/** Video transitions land on the out edge when dropped on the second half of a clip. */
+export function aimTransition(payload: EffectLibraryPayload, fraction: number): EffectLibraryPayload {
+  if (payload.kind !== 'transition-in' && payload.kind !== 'transition-out') return payload;
+  if (payload.affectsVideo === false) return payload;
+  return { ...payload, kind: fraction >= 0.5 ? 'transition-out' : 'transition-in' };
+}
+
 /** Whether this preset applies on a clip of the given track kind. */
 export function effectPayloadMatchesTrack(
   payload: EffectLibraryPayload,

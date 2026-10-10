@@ -19,7 +19,7 @@ const SEEK_EPSILON = 0.06;
 const DRIFT_WHILE_PLAYING = 0.2;
 
 interface AudioLane {
-  readonly clipId: ClipId;
+  clipId: ClipId;
   readonly assetId: MediaAssetId;
   readonly element: HTMLMediaElement;
   readonly source: MediaElementAudioSourceNode;
@@ -224,15 +224,56 @@ export class ProgramAudioMixer {
     }
   }
 
+  #destroyLane(lane: AudioLane): void {
+    const url = lane.element.src;
+    const sharesUrl = url !== '' && [...this.#lanes.values()].some((other) => other !== lane && other.element.src === url);
+    lane.pitch.dispose();
+    lane.element.pause();
+    if (!sharesUrl) {
+      lane.element.removeAttribute('src');
+      lane.element.load();
+    }
+    lane.element.remove();
+  }
+
   #removeLane(clipId: ClipId): void {
     const lane = this.#lanes.get(clipId);
     if (!lane) return;
-    lane.pitch.dispose();
-    lane.element.pause();
-    lane.element.removeAttribute('src');
-    lane.element.load();
-    lane.element.remove();
     this.#lanes.delete(clipId);
+    this.#destroyLane(lane);
+  }
+
+  /**
+   * Keep the element that is already playing this media. Tearing it down at a
+   * razor cut restarts the decoder and makes the next piece (a pitch change,
+   * another effect) stutter or drop out.
+   */
+  #reassignContinuations(
+    clips: readonly Clip[],
+    resolveHandle: (assetId: MediaAssetId) => MediaHandle | null,
+  ): void {
+    const wanted = new Set<ClipId>();
+    for (const clip of clips) {
+      if (clip.assetId) wanted.add(clip.id);
+    }
+    const spare: AudioLane[] = [];
+    for (const [id, lane] of this.#lanes) {
+      if (wanted.has(id)) continue;
+      this.#lanes.delete(id);
+      spare.push(lane);
+    }
+    for (const clip of clips) {
+      if (!clip.assetId || this.#lanes.has(clip.id)) continue;
+      const handle = resolveHandle(clip.assetId);
+      if (!handle) continue;
+      const index = spare.findIndex((lane) => lane.assetId === clip.assetId);
+      if (index < 0) continue;
+      const lane = spare.splice(index, 1)[0];
+      if (!lane) continue;
+      lane.clipId = clip.id;
+      this.#lanes.set(clip.id, lane);
+    }
+    for (const lane of spare) this.#destroyLane(lane);
   }
 
   sync(options: {
@@ -243,6 +284,7 @@ export class ProgramAudioMixer {
     readonly playing: boolean;
   }): void {
     const { clips, sequence, frame, resolveHandle, playing } = options;
+    this.#reassignContinuations(clips, resolveHandle);
     const active = new Set<ClipId>();
 
     for (const clip of clips) {

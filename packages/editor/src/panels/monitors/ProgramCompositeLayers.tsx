@@ -37,6 +37,8 @@ import {
   applyProgramClipStyle,
   hitTestProgramClipAt,
   letterboxMediaSize,
+  followSeamlessClip,
+  playbackElementKey,
   programClipWrapperStyle,
   programLayerLive,
   programPictureKey,
@@ -134,20 +136,26 @@ function syncStackVideos(
     const asset = assets[clip.assetId];
     if (!asset || asset.kind === 'image' || !asset.hasVideo) continue;
 
+    const clipNow = followSeamlessClip(sequence, clip, playhead);
     el.muted = true;
-    const rate = playbackRateForSpeed(clip.speed);
+    const rate = playbackRateForSpeed(clipNow.speed);
     if (Math.abs(el.playbackRate - rate) > 0.001) el.playbackRate = rate;
     el.preservesPitch = true;
     if (el.readyState < 1) continue;
 
-    const live = programLayerLive(layer, playhead);
+    const live = programLayerLive(
+      { clip: clipNow, track: layer.track, role: clipNow.id === clip.id ? layer.role : 'active' },
+      playhead,
+    );
     if (!live) {
-      const parkAt = playhead >= getClipEnd(clip) ? getClipEnd(clip) - 1 : clip.start;
-      const seconds = sourceTimeForFrame(clip, parkAt, sequence.frameRate);
-      const lead = playing && clip.start > playhead && clip.start - playhead <= 2;
+      const parkAt = playhead >= getClipEnd(clipNow) ? getClipEnd(clipNow) - 1 : clipNow.start;
+      const seconds = sourceTimeForFrame(clipNow, parkAt, sequence.frameRate);
+      const fps = sequence.frameRate.numerator / Math.max(1, sequence.frameRate.denominator);
+      const leadFrames = Math.max(2, Math.round(fps * 0.5));
+      const lead = playing && clipNow.start > playhead && clipNow.start - playhead <= leadFrames;
       if (!lead) {
         if (!el.paused) el.pause();
-        requestSeek(el, seconds, false);
+        if (!playing) requestSeek(el, seconds, false);
         continue;
       }
       if (Math.abs(el.currentTime - seconds) > 0.12) requestSeek(el, seconds, false);
@@ -155,7 +163,7 @@ function syncStackVideos(
       continue;
     }
 
-    const seconds = sourceTimeForFrame(clip, playhead, sequence.frameRate);
+    const seconds = sourceTimeForFrame(clipNow, playhead, sequence.frameRate);
     const drift = PLAYBACK_DRIFT * Math.max(1, rate);
     if (playing) {
       if (el.paused) {
@@ -773,7 +781,7 @@ export function ProgramCompositeLayers({ sequence }: { readonly sequence: Sequen
           }
           return (
             <CompositeLayer
-              key={layer.clip.id}
+              key={playbackElementKey(sequence, layer.clip)}
               clip={layer.clip}
               sequence={sequence}
               playhead={pictureFrame}

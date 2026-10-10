@@ -41,5 +41,25 @@ export function readEffectDragData(dataTransfer: DataTransfer): EffectLibraryPay
 }
 
 export function isEffectDrag(dataTransfer: DataTransfer): boolean {
-  return dataTransfer.types.includes(EFFECT_DRAG_TYPE);
+  return Array.from(dataTransfer.types).includes(EFFECT_DRAG_TYPE);
+}
+
+/**
+ * True while an effect preset is the drag source. The in-memory payload covers
+ * browsers that hide custom drag types until drop, without treating a media or
+ * file drag as an effect.
+ */
+export function effectDragInProgress(dataTransfer: DataTransfer, stored: EffectLibraryPayload | null): boolean {
+  const types = Array.from(dataTransfer.types);
+  if (types.includes(EFFECT_DRAG_TYPE)) return true;
+  if (types.includes(ASSET_DRAG_TYPE) || types.includes('Files')) return false;
+  return stored !== null;
+}
+
+/** Payload carried by the drop, or the one remembered when the drag started. */
+export function effectPayloadFromDrop(
+  dataTransfer: DataTransfer,
+  stored: EffectLibraryPayload | null,
+): EffectLibraryPayload | null {
+  return readEffectDragData(dataTransfer) ?? stored;
 }

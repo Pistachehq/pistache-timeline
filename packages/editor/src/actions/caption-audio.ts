@@ -2,7 +2,7 @@ import {
   assignSpeechText,
   captionCuesForClip,
   captionPhrasesFromTranscript,
-  phrasesHeardInSpeech,
+  normalizeSpeechLevel,
   speechPhrases,
   type CaptionCue,
   type Clip,
@@ -20,17 +20,6 @@ export interface CaptionAnalysis {
 }
 
 const SPEECH_RATE = 16_000;
-
-function monoRange(buffer: AudioBuffer, startFrame: number, endFrame: number): Float32Array {
-  const length = Math.max(0, endFrame - startFrame);
-  const mixed = new Float32Array(length);
-  const channels = buffer.numberOfChannels;
-  for (let channel = 0; channel < channels; channel++) {
-    const data = buffer.getChannelData(channel);
-    for (let i = 0; i < length; i++) mixed[i] = (mixed[i] ?? 0) + (data[startFrame + i] ?? 0) / channels;
-  }
-  return mixed;
-}
 
 function sliceBuffer(buffer: AudioBuffer, startFrame: number, endFrame: number): AudioBuffer {
   const length = Math.max(1, endFrame - startFrame);
@@ -136,25 +125,35 @@ export async function analyzeClipAudio(
   const outSec = Math.min(decoded.duration, Math.max(inSec, framesToSeconds(clip.sourceOut, rate)));
   const startFrame = Math.min(decoded.length, Math.floor(inSec * decoded.sampleRate));
   const endFrame = Math.min(decoded.length, Math.ceil(outSec * decoded.sampleRate));
-  const duration = Math.max(0, (endFrame - startFrame) / decoded.sampleRate);
-  const samples = monoRange(decoded, startFrame, endFrame);
-  const phrases = phrasesOrWholeClip(samples, decoded.sampleRate, duration);
-  if (phrases.length === 0) return { cues: [], heard: false };
+  if (endFrame - startFrame < 2) return { cues: [], heard: false };
 
   onStatus('Preparing audio…');
+  const pcm = normalizeSpeechLevel(await resampleSpeech(decoded, startFrame, endFrame));
+  const duration = pcm.length / SPEECH_RATE;
+  const phrases = phrasesOrWholeClip(pcm, SPEECH_RATE, duration);
+  if (phrases.length === 0) return { cues: [], heard: false };
+
+  const pad = 0.6;
+  const lead = Math.max(0, (phrases[0]?.start ?? 0) - pad);
+  const tail = Math.min(duration, (phrases[phrases.length - 1]?.end ?? duration) + pad);
+  const from = Math.min(pcm.length, Math.floor(lead * SPEECH_RATE));
+  const to = Math.min(pcm.length, Math.max(from + 1, Math.ceil(tail * SPEECH_RATE)));
   let transcript: { text: string; chunks: readonly { text: string; start: number; end: number }[] };
   try {
-    transcript = await transcribeSpeech(await resampleSpeech(decoded, startFrame, endFrame), language, signal, onStatus);
+    transcript = await transcribeSpeech(pcm.slice(from, to), language, signal, onStatus);
   } catch (error) {
     if (signal.aborted || (error instanceof DOMException && error.name === 'AbortError')) return null;
     throw error;
   }
   if (signal.aborted) return null;
 
+  const shifted = transcript.chunks.map((chunk) => ({
+    text: chunk.text,
+    start: chunk.start + lead,
+    end: chunk.end + lead,
+  }));
   const timed =
-    transcript.chunks.length > 0
-      ? phrasesHeardInSpeech(captionPhrasesFromTranscript(transcript.chunks), phrases)
-      : assignSpeechText(phrases, transcript.text);
+    shifted.length > 0 ? captionPhrasesFromTranscript(shifted) : assignSpeechText(phrases, transcript.text);
   const spoken = timed.filter((phrase) => phrase.text.trim().length > 0);
   if (spoken.length === 0) throw new Error('Could not transcribe this audio.');
   const cues = captionCuesForClip(clip, spoken, rate);

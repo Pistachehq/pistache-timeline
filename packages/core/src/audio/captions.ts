@@ -23,7 +23,7 @@ const HANGOVER_WINDOWS = 6;
 const MIN_PHRASE_SECONDS = 0.2;
 const MERGE_GAP_SECONDS = 0.28;
 const MAX_PHRASE_SECONDS = 4.2;
-const MAX_PHRASES = 48;
+const MAX_PHRASES = 240;
 const LINE_CHARS = 42;
 const LINE_CHARS_HARD = 64;
 const LINE_PAUSE_SECONDS = 0.45;
@@ -152,6 +152,40 @@ function isStageDirection(text: string): boolean {
   return trimmed.length === 0 || /^\[[^\]]+\]$/.test(trimmed) || /^[♪♫.\s]+$/.test(trimmed);
 }
 
+function tidyChunks(chunks: readonly TranscriptChunk[]): TranscriptChunk[] {
+  const tidy: TranscriptChunk[] = [];
+  for (const chunk of chunks) {
+    const text = chunk.text.replace(/\s+/g, ' ').trim();
+    if (isStageDirection(text) || !Number.isFinite(chunk.start)) continue;
+    const start = Math.max(0, chunk.start);
+    let end = Number.isFinite(chunk.end) ? chunk.end : start;
+    const previous = tidy[tidy.length - 1];
+    if (previous && previous.text.toLowerCase() === text.toLowerCase() && start - previous.start < 1.25) {
+      tidy[tidy.length - 1] = { text: previous.text, start: previous.start, end: Math.max(previous.end, end) };
+      continue;
+    }
+    if (previous && start < previous.end) {
+      tidy[tidy.length - 1] = { text: previous.text, start: previous.start, end: Math.max(previous.start + 0.04, start) };
+    }
+    if (!(end > start)) end = start + 0.16;
+    tidy.push({ text, start, end });
+  }
+  return tidy;
+}
+
+function dedupedWords(words: readonly WordSpan[]): WordSpan[] {
+  const kept: WordSpan[] = [];
+  for (const word of words) {
+    const previous = kept[kept.length - 1];
+    if (previous && previous.text.toLowerCase() === word.text.toLowerCase() && word.start - previous.start < 0.8) {
+      kept[kept.length - 1] = { text: previous.text, start: previous.start, end: Math.max(previous.end, word.end) };
+      continue;
+    }
+    kept.push(word);
+  }
+  return kept;
+}
+
 function wordsInChunk(chunk: TranscriptChunk): WordSpan[] {
   const text = chunk.text.replace(/\s+/g, ' ').trim();
   if (isStageDirection(text) || !(chunk.end > chunk.start)) return [];
@@ -201,7 +235,7 @@ function fitPhraseCount(lines: TimedSpeech[], max: number): TimedSpeech[] {
  * there are more lines than the timeline can hold.
  */
 export function captionPhrasesFromTranscript(chunks: readonly TranscriptChunk[]): TimedSpeech[] {
-  const words = chunks.flatMap(wordsInChunk);
+  const words = dedupedWords(tidyChunks(chunks).flatMap(wordsInChunk));
   const groups: WordSpan[][] = [];
   let current: WordSpan[] = [];
   const flush = () => {
@@ -237,6 +271,23 @@ export function captionPhrasesFromTranscript(chunks: readonly TranscriptChunk[])
     }))
     .filter((line) => line.text.length > 0 && line.end > line.start);
   return fitPhraseCount(lines, MAX_PHRASES);
+}
+
+/** Raises quiet speech toward a normal level. Loud audio is left unchanged. */
+export function normalizeSpeechLevel(samples: Float32Array): Float32Array {
+  let peak = 0;
+  for (let i = 0; i < samples.length; i++) {
+    const sample = Math.abs(samples[i] ?? 0);
+    if (sample > peak) peak = sample;
+  }
+  if (peak < 0.015 || peak >= 0.45) return samples;
+  const gain = 0.9 / peak;
+  const out = new Float32Array(samples.length);
+  for (let i = 0; i < samples.length; i++) {
+    const sample = (samples[i] ?? 0) * gain;
+    out[i] = sample > 1 ? 1 : sample < -1 ? -1 : sample;
+  }
+  return out;
 }
 
 /** Picks the spoken language from Whisper's language-token scores. */

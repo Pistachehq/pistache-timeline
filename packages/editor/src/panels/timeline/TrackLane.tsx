@@ -4,6 +4,10 @@ import {
 
   type FrameRate,
 
+  getClipAtFrame,
+
+  getClipDuration,
+
   getClipsInRange,
 
   type MediaAssetId,
@@ -22,7 +26,8 @@ import { type DragEvent, memo, useMemo, useState } from 'react';
 
 import { useRuntime, useUiState } from '../../runtime/context';
 
-import { ASSET_DRAG_TYPE } from '../dnd';
+import { ASSET_DRAG_TYPE, effectDragInProgress, effectPayloadFromDrop } from '../dnd';
+import { aimTransition, effectPayloadMatchesClip } from '../project/apply-effect-payload';
 import { filesFromDataTransfer, isOsFileDrag } from '../file-drop';
 
 import { ClipItem } from './ClipItem';
@@ -203,11 +208,23 @@ export const TrackLane = memo(function TrackLane({
 
         if (razor) {
 
-          runtime.actions.edit.splitAtFrame(
+          const raw = pixelToFrame(laneOffsetX(event.clientX, event.currentTarget), pixelsPerFrame);
 
-            frameAtClientX(event.clientX, event.currentTarget),
+          const snapped = frameAtClientX(event.clientX, event.currentTarget);
 
-          );
+          const clip = getClipAtFrame(sequence, track, raw);
+
+          if (!clip) runtime.stores.ui.getState().notify('There is no clip to split at this position.', 'info');
+
+          else {
+
+            const end = clip.start + getClipDuration(clip);
+
+            const frame = snapped > clip.start && snapped < end ? snapped : raw;
+
+            runtime.actions.edit.splitClipAt(clip.id, frame);
+
+          }
 
           clearSnapGuides();
 
@@ -230,6 +247,16 @@ export const TrackLane = memo(function TrackLane({
       }}
 
       onDragOver={(event) => {
+        const stored = runtime.stores.ui.getState().effectDrag;
+        if (!track.locked && effectDragInProgress(event.dataTransfer, stored)) {
+          const frame = frameAtClientX(event.clientX, event.currentTarget);
+          const clip = stored ? getClipAtFrame(sequence, track, frame) : undefined;
+          if (!stored || (clip && effectPayloadMatchesClip(stored, clip, track.kind))) {
+            event.preventDefault();
+            event.dataTransfer.dropEffect = 'copy';
+          }
+          return;
+        }
         if (!acceptsOsFileDrag(event) && !acceptsAssetDrag(event)) return;
         event.preventDefault();
         event.dataTransfer.dropEffect = 'copy';
@@ -248,6 +275,30 @@ export const TrackLane = memo(function TrackLane({
         const frame = dropFrame ?? frameAtClientX(event.clientX, event.currentTarget);
         setDropFrame(null);
         clearSnapGuides();
+
+        const storedEffect = runtime.stores.ui.getState().effectDrag;
+        if (effectDragInProgress(event.dataTransfer, storedEffect)) {
+          event.preventDefault();
+          const clip = getClipAtFrame(sequence, track, frame);
+          const dropped = effectPayloadFromDrop(event.dataTransfer, storedEffect);
+          if (!clip || !dropped) {
+            runtime.stores.ui.getState().notify('Drop the effect onto a clip.', 'warning');
+            return;
+          }
+          const duration = getClipDuration(clip);
+          const payload = aimTransition(dropped, duration > 0 ? (frame - clip.start) / duration : 0);
+          if (payload.kind === 'text-animation' && !clip.text) {
+            runtime.stores.ui.getState().notify('Text transitions only apply to text clips.', 'warning');
+            return;
+          }
+          if (!effectPayloadMatchesClip(payload, clip, track.kind)) {
+            runtime.stores.ui.getState().notify('This effect does not apply to this clip.', 'warning');
+            return;
+          }
+          runtime.stores.selection.getState().selectClips([clip.id], 'replace');
+          runtime.actions.edit.applyEffectLibraryPayload(clip.id, payload, 'Apply Effect');
+          return;
+        }
 
         if (acceptsOsFileDrag(event)) {
           event.preventDefault();

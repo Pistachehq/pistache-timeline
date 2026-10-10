@@ -5,6 +5,7 @@ import {
   assignSpeechText,
   captionCuesForClip,
   captionPhrasesFromTranscript,
+  normalizeSpeechLevel,
   phrasesHeardInSpeech,
   spokenLanguage,
   speechPhrases,
@@ -93,6 +94,23 @@ describe('captionPhrasesFromTranscript', () => {
     expect(lines.every((line) => line.text.length <= 90)).toBe(true);
   });
 
+  it('drops a word the model repeats immediately', () => {
+    const lines = captionPhrasesFromTranscript([
+      { start: 0, end: 0.3, text: 'gracias' },
+      { start: 0.32, end: 0.6, text: 'gracias' },
+      { start: 0.6, end: 1, text: 'amigo' },
+    ]);
+    expect(lines).toEqual([{ start: 0, end: 1, text: 'gracias amigo' }]);
+  });
+
+  it('does not let the next word start before the previous one finishes', () => {
+    const lines = captionPhrasesFromTranscript([
+      { start: 0, end: 0.8, text: 'hola' },
+      { start: 0.4, end: 1, text: 'mundo' },
+    ]);
+    expect(lines).toEqual([{ start: 0, end: 1, text: 'hola mundo' }]);
+  });
+
   it('drops stage directions and keeps speech that overlaps the voice', () => {
     const lines = captionPhrasesFromTranscript([
       { start: 0, end: 1, text: '[Music]' },
@@ -100,6 +118,16 @@ describe('captionPhrasesFromTranscript', () => {
       { start: 8, end: 9, text: 'gracias por ver' },
     ]);
     expect(phrasesHeardInSpeech(lines, [{ start: 0.9, end: 2.1 }]).map((line) => line.text)).toEqual(['Hola']);
+  });
+});
+
+describe('normalizeSpeechLevel', () => {
+  it('raises quiet speech and leaves a loud signal alone', () => {
+    const quiet = new Float32Array([0.1, -0.1, 0]);
+    const raised = normalizeSpeechLevel(quiet);
+    expect(Math.max(...raised)).toBeCloseTo(0.9);
+    const loud = new Float32Array([0.8, -0.2]);
+    expect(normalizeSpeechLevel(loud)).toBe(loud);
   });
 });
 
