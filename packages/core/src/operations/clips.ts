@@ -448,7 +448,7 @@ export function trimClip(project: Project, input: TrimClipInput): EditResult {
     const asset = clip.assetId ? project.mediaAssets[clip.assetId] : undefined;
     if (!clip.text && !asset) return fail('NOT_FOUND', 'Media for this clip is missing.');
     const maxSourceOut = clip.text ? TEXT_CLIP_MAX_SOURCE_FRAMES : getMaxClipSourceOutFrames(asset!, sequence);
-    const extendStart = asset ? isStillImageAsset(asset) : false;
+    const extendStart = clip.text !== null || (asset ? isStillImageAsset(asset) : false);
 
     const first = trimClipInSequence(sequence, input.clipId, input.edge, input.frame, maxSourceOut, extendStart);
     if (!first.ok) return first;
@@ -464,7 +464,7 @@ export function trimClip(project: Project, input: TrimClipInput): EditResult {
           : partnerAsset
             ? getMaxClipSourceOutFrames(partnerAsset, sequence)
             : maxSourceOut;
-        const partnerExtends = partnerAsset ? isStillImageAsset(partnerAsset) : false;
+        const partnerExtends = partner.text !== null || (partnerAsset ? isStillImageAsset(partnerAsset) : false);
         const second = trimClipInSequence(
           next,
           partnerId,

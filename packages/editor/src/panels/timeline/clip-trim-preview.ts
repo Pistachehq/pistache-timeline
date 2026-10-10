@@ -60,7 +60,7 @@ export function buildTrimPreview(
 }
 
 function trimMediaLimit(project: Project, sequence: Sequence, clip: Clip): { max: number; extendStart: boolean } {
-  if (clip.text) return { max: TEXT_CLIP_MAX_SOURCE_FRAMES, extendStart: false };
+  if (clip.text) return { max: TEXT_CLIP_MAX_SOURCE_FRAMES, extendStart: true };
   if (!clip.assetId) return { max: 0, extendStart: false };
   const asset = project.mediaAssets[clip.assetId];
   if (!asset) return { max: 0, extendStart: false };

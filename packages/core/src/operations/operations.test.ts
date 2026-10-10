@@ -7,6 +7,7 @@ import { createProject } from '../model/factory';
 import { activeSequence, imageAsset, setupProject } from '../test/fixtures';
 import {
   addClip,
+  addTextClip,
   moveClip,
   removeClips,
   setClipEnabled,
@@ -199,6 +200,36 @@ describe('splitClip and removeClips', () => {
     expect(clip.sourceIn).toBe(0);
     expect(clip.sourceOut).toBe(before.sourceOut + 60);
     expect(getClipEnd(clip)).toBe(end);
+
+    const blocked = trimClip(withClip, { sequenceId: sequence.id, clipId: CLIP_A, edge: 'start', frame: -5 });
+    expect(blocked.ok).toBe(false);
+  });
+
+  it('extends a text clip to the left without moving its end', () => {
+    const project = createProject({ now: new Date('2026-01-01T00:00:00Z') });
+    const sequence = activeSequence(project);
+    const v1 = sequence.videoTracks[0]!.id;
+    const withClip = unwrap(
+      addTextClip(project, {
+        sequenceId: sequence.id,
+        trackId: v1,
+        start: 90,
+        durationFrames: 150,
+        clipId: CLIP_A,
+      }),
+    );
+    const before = activeSequence(withClip).clips[CLIP_A]!;
+    const end = getClipEnd(before);
+
+    const extended = activeSequence(
+      unwrap(trimClip(withClip, { sequenceId: sequence.id, clipId: CLIP_A, edge: 'start', frame: 30 })),
+    );
+    const clip = extended.clips[CLIP_A]!;
+    expect(clip.start).toBe(30);
+    expect(clip.sourceIn).toBe(0);
+    expect(clip.sourceOut).toBe(before.sourceOut + 60);
+    expect(getClipEnd(clip)).toBe(end);
+    expect(clip.text?.content).toBe(before.text?.content);
 
     const blocked = trimClip(withClip, { sequenceId: sequence.id, clipId: CLIP_A, edge: 'start', frame: -5 });
     expect(blocked.ok).toBe(false);

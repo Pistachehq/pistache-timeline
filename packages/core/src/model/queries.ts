@@ -147,8 +147,8 @@ export interface ClipEdgeTrim {
 }
 
 /**
- * Sequence frames the start handle can reach. A still may grow past source
- * frame 0; video and audio stop where the file starts.
+ * Sequence frames the start handle can reach. A still or a text clip may grow
+ * past source frame 0; video and audio stop where the file starts.
  */
 export function clipStartTrimBounds(
   clip: Clip,
@@ -178,9 +178,9 @@ export function clipStartFloor(sequence: Sequence, clip: Clip): number {
 }
 
 /**
- * New source range for a start-handle trim. Stills that move left of the
- * first source frame keep `sourceIn` at 0 and grow `sourceOut`, so the
- * timeline end stays put and the still simply lasts longer.
+ * New source range for a start-handle trim. Stills and text that move left of
+ * the first source frame keep `sourceIn` at 0 and grow `sourceOut`, so the
+ * timeline end stays put and the clip simply lasts longer.
  */
 export function clipStartTrim(
   clip: Clip,
