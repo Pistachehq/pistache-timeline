@@ -1,7 +1,15 @@
 import {
+  addMediaAssets,
+  addCaptionClips,
   addClip,
   addTextClip,
   addTrack,
+  captionDesignById,
+  captionPositionY,
+  DEFAULT_CAPTION_FONT_SIZE,
+  applyMotionEdit,
+  type CaptionCue,
+  type CaptionDesignPatch,
   type Clip,
   type ClipAudio,
   type ClipId,
@@ -17,23 +25,35 @@ import {
   pairedVideoTrack,
   updateSequence,
   type MediaAssetId,
+  markSpeechLink,
   moveClip,
+  moveKeyframe,
+  moveKeyframes,
+  setClipSpeed,
   newClipId,
   type Project,
+  removeCaptionClips,
   removeClips,
+  removeTrack as removeTrackOp,
   renameProject,
   type Sequence,
+  resetMotionChannel,
   setClipEnabled,
+  setKeyframeInterpolation,
+  setMotionChannelEnabled,
   splitClip,
+  toggleKeyframeAtFrame,
   trimClip,
+  type KeyframeInterpolation,
+  type MotionChannelId,
   type TrackChanges,
   type TrackId,
   type TrackKind,
   mergeClipTransitions,
+  updateCaptionLook,
   updateClipAudio,
   updateClipEffects,
   updateClipText,
-  updateClipTransform,
   updateClipTransitions,
   updateTrack,
   type ClipEffects,
@@ -45,6 +65,10 @@ import { type EffectLibraryPayload } from '../panels/dnd';
 import { applyEffectPayloadToClip } from '../panels/project/apply-effect-payload';
 import { type AutoCreateTrackKind } from '../state/ui-store';
 import { currentSequence, type EditorServices } from '../runtime/services';
+import { type MediaActions } from './media-actions';
+import { createSpeechSync, loadSpeechWav } from './speech-sync';
+import { createVoiceOver } from './voice-over';
+import { silentSamples } from './wav-audio';
 
 type ClipMovePreview = { readonly clipId: ClipId; readonly trackId: TrackId; readonly start: number };
 
@@ -131,7 +155,7 @@ function chain(project: Project, steps: readonly ((p: Project) => EditResult)[])
  * user intent onto one or more core operations and records a single,
  * labelled undo step.
  */
-export function createEditActions(services: EditorServices) {
+export function createEditActions(services: EditorServices, media: MediaActions) {
   const { project: projectStore, selection, ui, playback } = services.stores;
 
   /** Runs an edit against the active sequence and reports failures in the status bar. */
@@ -238,6 +262,12 @@ export function createEditActions(services: EditorServices) {
     selection.getState().selectClips([clipId]);
     return clipId;
   };
+
+  const voiceOver = createVoiceOver(services, {
+    importRecording: async (file) => (await media.importLocalFiles([file], { quiet: true }))[0] ?? null,
+    placeRecording: (assetId, trackId, start) => placeClip(assetId, trackId, start, 'Record Voice Over') !== null,
+  });
+  createSpeechSync(services, media);
 
   return {
     /** Inserts the full asset at the playhead on the first suitable unlocked track. */
@@ -434,8 +464,78 @@ export function createEditActions(services: EditorServices) {
     },
 
     setClipTransform(clipId: ClipId, transform: Partial<ClipTransform>, label = 'Change Transform'): boolean {
-      return run(label, (project, sequence) =>
-        updateClipTransform(project, { sequenceId: sequence.id, clipId, transform }),
+      return run(label, (project, sequence) => {
+        const clip = sequence.clips[clipId];
+        if (!clip) return ok(project);
+        return applyMotionEdit(project, {
+          sequenceId: sequence.id,
+          clipId,
+          transform,
+          localFrame: playback.getState().playhead - clip.start,
+        });
+      });
+    },
+
+    setMotionAnimated(clipId: ClipId, channel: MotionChannelId, enabled: boolean): boolean {
+      return run(enabled ? 'Enable Animation' : 'Disable Animation', (project, sequence) => {
+        const clip = sequence.clips[clipId];
+        if (!clip) return ok(project);
+        return setMotionChannelEnabled(project, {
+          sequenceId: sequence.id,
+          clipId,
+          channel,
+          enabled,
+          localFrame: playback.getState().playhead - clip.start,
+        });
+      });
+    },
+
+    toggleKeyframe(clipId: ClipId, channel: MotionChannelId, localFrame?: number): boolean {
+      return run('Edit Keyframe', (project, sequence) => {
+        const clip = sequence.clips[clipId];
+        if (!clip) return ok(project);
+        return toggleKeyframeAtFrame(project, {
+          sequenceId: sequence.id,
+          clipId,
+          channel,
+          localFrame: localFrame ?? playback.getState().playhead - clip.start,
+        });
+      });
+    },
+
+    moveMotionKeyframe(clipId: ClipId, channel: MotionChannelId, keyframeId: string, frame: number): boolean {
+      return run('Move Keyframe', (project, sequence) =>
+        moveKeyframe(project, { sequenceId: sequence.id, clipId, channel, keyframeId, frame }),
+      );
+    },
+
+    moveMotionKeyframes(
+      clipId: ClipId,
+      moves: readonly { channel: MotionChannelId; keyframeId: string; frame: number }[],
+    ): boolean {
+      return run('Move Keyframes', (project, sequence) =>
+        moveKeyframes(project, { sequenceId: sequence.id, clipId, moves }),
+      );
+    },
+
+    setClipSpeed(clipId: ClipId, speed: number): boolean {
+      return run('Change Speed', (project, sequence) => setClipSpeed(project, { sequenceId: sequence.id, clipId, speed }));
+    },
+
+    setMotionInterpolation(
+      clipId: ClipId,
+      channel: MotionChannelId,
+      keyframeId: string,
+      interpolation: KeyframeInterpolation,
+    ): boolean {
+      return run('Change Keyframe', (project, sequence) =>
+        setKeyframeInterpolation(project, { sequenceId: sequence.id, clipId, channel, keyframeId, interpolation }),
+      );
+    },
+
+    resetMotion(clipId: ClipId, channel: MotionChannelId): boolean {
+      return run('Reset Property', (project, sequence) =>
+        resetMotionChannel(project, { sequenceId: sequence.id, clipId, channel }),
       );
     },
 
@@ -512,6 +612,112 @@ export function createEditActions(services: EditorServices) {
       return clipId;
     },
 
+    async addSpeechClip(input: {
+      trackId: TrackId;
+      start: number;
+      positionX?: number;
+      positionY?: number;
+    }): Promise<ClipId | null> {
+      const sequence = currentSequence(services);
+      if (!sequence) {
+        ui.getState().notify('There is no active sequence.', 'error');
+        return null;
+      }
+      const clipId = newClipId();
+      const audioClipId = newClipId();
+      const loaded = await loadSpeechWav(
+        services.platform.media,
+        silentSamples(0.45),
+        16_000,
+        `Speech-${clipId}.wav`,
+        'Speech',
+      );
+      if (typeof loaded === 'string') {
+        ui.getState().notify(loaded, 'error');
+        return null;
+      }
+      const result = projectStore.getState().apply('Add Speech', (project) => {
+        const current = getSequence(project, sequence.id);
+        if (!current) {
+          return addTextClip(project, { sequenceId: sequence.id, trackId: input.trackId, start: input.start, clipId });
+        }
+        const fps = current.frameRate.numerator / current.frameRate.denominator;
+        const duration = Math.max(1, Math.round(fps * 5));
+        const target = findTrack(current, input.trackId);
+        const holdsPicture =
+          target?.kind === 'video' &&
+          target.clipIds.some((id) => {
+            const clip = current.clips[id];
+            return clip !== undefined && clip.text === null;
+          });
+        const occupied =
+          target?.kind === 'video' &&
+          !target.locked &&
+          (holdsPicture || !isRangeFree(current, target, input.start, duration));
+        const withAsset = addMediaAssets(project, [loaded.asset]);
+        if (!withAsset.ok) return withAsset;
+        let draft = withAsset.value;
+        let trackId = input.trackId;
+        if (occupied) {
+          const added = addTrack(draft, { sequenceId: current.id, kind: 'video' });
+          if (!added.ok) return added;
+          draft = added.value;
+          const created = getSequence(draft, current.id)?.videoTracks.at(-1);
+          if (created) trackId = created.id;
+        }
+        const texted = addTextClip(draft, {
+          sequenceId: current.id,
+          trackId,
+          start: input.start,
+          durationFrames: duration,
+          clipId,
+          ...(input.positionX !== undefined ? { positionX: input.positionX } : {}),
+          ...(input.positionY !== undefined ? { positionY: input.positionY } : {}),
+        });
+        if (!texted.ok) return texted;
+        const seq = getSequence(texted.value, current.id);
+        if (!seq) return texted;
+        const frames = Math.max(1, getAssetFrameCount(loaded.asset, seq));
+        let audioTrackId = seq.audioTracks.find(
+          (track) => !track.locked && isRangeFree(seq, track, input.start, frames),
+        )?.id;
+        let withTrack = texted.value;
+        if (!audioTrackId) {
+          const added = addTrack(withTrack, { sequenceId: current.id, kind: 'audio' });
+          if (!added.ok) return added;
+          withTrack = added.value;
+          audioTrackId = getSequence(withTrack, current.id)?.audioTracks.at(-1)?.id;
+        }
+        if (!audioTrackId) return texted;
+        const voiced = addClip(withTrack, {
+          sequenceId: current.id,
+          trackId: audioTrackId,
+          assetId: loaded.asset.id,
+          start: input.start,
+          sourceIn: 0,
+          sourceOut: frames,
+          clipId: audioClipId,
+        });
+        if (!voiced.ok) return voiced;
+        return markSpeechLink(voiced.value, {
+          sequenceId: current.id,
+          textClipId: clipId,
+          audioClipId,
+        });
+      });
+      if (!result.ok) {
+        services.platform.media.release(loaded.handle);
+        ui.getState().notify(result.error.message, result.error.code === 'LOCKED' ? 'warning' : 'error');
+        return null;
+      }
+      media.adoptGeneratedAudio(loaded.asset, loaded.handle);
+      selection.getState().selectClips([clipId]);
+      ui.getState().setTextEditingClipId(clipId);
+      ui.getState().setTool('select');
+      playback.getState().setPlayhead(input.start);
+      return clipId;
+    },
+
     setClipText(clipId: ClipId, text: Partial<ClipText>, label = 'Edit Text'): boolean {
       return run(label, (project, sequence) => updateClipText(project, { sequenceId: sequence.id, clipId, text }));
     },
@@ -555,10 +761,80 @@ export function createEditActions(services: EditorServices) {
       );
     },
 
+    removeTrack(trackId: TrackId): boolean {
+      if (services.stores.ui.getState().voiceOverTrackId === trackId) voiceOver.cancel();
+      return run('Delete Track', (project, sequence) => removeTrackOp(project, { sequenceId: sequence.id, trackId }));
+    },
+
+    toggleVoiceOver(trackId: TrackId): Promise<void> {
+      return voiceOver.toggle(trackId);
+    },
+
+    cancelVoiceOver(): void {
+      voiceOver.cancel();
+    },
+
     renameProject(name: string): boolean {
       const result = projectStore.getState().apply('Rename Project', (project) => renameProject(project, name));
       if (!result.ok) ui.getState().notify(result.error.message, 'error');
       return result.ok;
+    },
+
+    removeCaptions(clipId: ClipId): boolean {
+      return run('Remove Captions', (project, sequence) => removeCaptionClips(project, sequence.id, clipId));
+    },
+
+    addCaptions(clipId: ClipId, cues: readonly CaptionCue[]): boolean {
+      return run('Add Captions', (project, sequence) => {
+        const cleared = removeCaptionClips(project, sequence.id, clipId);
+        if (!cleared.ok) return cleared;
+        let working = cleared.value;
+        const current = getSequence(working, sequence.id);
+        if (!current) return cleared;
+        const height = current.resolution.height;
+        let trackId: TrackId | undefined;
+        for (let index = current.videoTracks.length - 1; index >= 0; index--) {
+          const track = current.videoTracks[index];
+          if (!track || track.locked) continue;
+          if (cues.every((cue) => isRangeFree(current, track, cue.start, cue.durationFrames))) {
+            trackId = track.id;
+            break;
+          }
+        }
+        if (!trackId) {
+          const added = addTrack(working, { sequenceId: sequence.id, kind: 'video' });
+          if (!added.ok) return added;
+          working = added.value;
+          const created = getSequence(working, sequence.id)?.videoTracks.at(-1);
+          if (!created) return added;
+          trackId = created.id;
+        }
+        return addCaptionClips(working, {
+          sequenceId: sequence.id,
+          trackId,
+          captionSourceId: clipId,
+          positionY: captionPositionY('bottom', height),
+          fontSize: DEFAULT_CAPTION_FONT_SIZE,
+          text: captionDesignById('classic').text,
+          cues,
+        });
+      });
+    },
+
+    setCaptionLook(
+      clipId: ClipId,
+      look: { readonly text?: CaptionDesignPatch; readonly fontSize?: number; readonly positionY?: number },
+      label = 'Change Captions',
+    ): boolean {
+      return run(label, (project, sequence) =>
+        updateCaptionLook(project, {
+          sequenceId: sequence.id,
+          captionSourceId: clipId,
+          ...(look.text ? { text: look.text } : {}),
+          ...(look.fontSize !== undefined ? { fontSize: look.fontSize } : {}),
+          ...(look.positionY !== undefined ? { positionY: look.positionY } : {}),
+        }),
+      );
     },
 
     beginTransaction: (label: string) => projectStore.getState().beginTransaction(label),

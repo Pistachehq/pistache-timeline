@@ -4,21 +4,8 @@ import { commandLabel, DEFAULT_KEYMAP, getCommand, type CommandId } from '../../
 import { formatChord } from '../../commands/keymap';
 import { useRuntime } from '../../runtime/context';
 
-const LISTED: readonly CommandId[] = [
-  'playback.toggle',
-  'playback.stepBack',
-  'playback.stepForward',
-  'playback.previousEdit',
-  'playback.nextEdit',
-  'clip.insertSelectedAsset',
-  'clip.split',
-  'clip.nudgeLeft',
-  'edit.delete',
-  'tool.select',
-  'tool.razor',
-  'view.zoomIn',
-  'view.zoomOut',
-];
+/** Every bound command, in keymap order, so new shortcuts show up here. */
+const LISTED = Object.keys(DEFAULT_KEYMAP) as CommandId[];
 
 export function AboutDialog({ onClose }: { onClose: () => void }) {
   const runtime = useRuntime();
@@ -36,7 +23,7 @@ export function AboutDialog({ onClose }: { onClose: () => void }) {
         It is not affiliated with any commercial video editing vendor. Released under the MIT License.
       </p>
       <h3 className="mb-1 text-xs font-semibold text-fg">Keyboard shortcuts</h3>
-      <ul className="grid grid-cols-1 gap-y-0.5 text-xs">
+      <ul className="grid max-h-72 grid-cols-1 gap-y-0.5 overflow-y-auto text-xs">
         {LISTED.map((id) => (
           <li key={id} className="flex justify-between">
             <span>{commandLabel(getCommand(id), runtime)}</span>

@@ -118,7 +118,7 @@ export function TimelineRuler({ scrollerRef, pixelsPerFrame, frameRate, width }:
   return (
     <canvas
       ref={canvasRef}
-      className="sticky block shrink-0 cursor-text"
+      className="pointer-events-auto sticky block shrink-0 cursor-text self-start"
       style={{ left: TRACK_HEADER_WIDTH, width, height: RULER_HEIGHT }}
       aria-label="Timeline ruler. Click or drag to move the playhead."
       data-testid="timeline-ruler"

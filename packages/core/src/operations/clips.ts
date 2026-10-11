@@ -1,14 +1,31 @@
 import { clamp, isFiniteNumber, isNonNegativeInteger, ok, type Result, type TimelineError } from '@timeline/shared';
-import { AUDIO_LIMITS, TRANSFORM_LIMITS } from '../model/defaults';
+import { AUDIO_LIMITS, DEFAULT_CLIP_TRANSFORM, TRANSFORM_LIMITS } from '../model/defaults';
+import {
+  channelAt,
+  clampLocalFrame,
+  evaluateClipTransform,
+  keyframeAtFrame,
+  MOTION_CHANNELS,
+  refitClipAnimation,
+  scaleClipAnimation,
+  upsertKeyframe,
+  type KeyframeInterpolation,
+  type MotionChannelId,
+} from '../model/animation';
 import { createClip } from '../model/factory';
 import { maxTransitionFramesForClip } from '../model/effects';
+import { clipSpeedPercent, sourceFramesForTimeline, timelineFrameCount } from '../model/speed';
 import { DEFAULT_CLIP_TEXT, TEXT_CLIP_MAX_SOURCE_FRAMES, textClipName, type ClipText } from '../model/text';
 import {
   findTrack,
+  clipStartFloor,
+  clipStartTrim,
+  clipStartTrimBounds,
   getAssetFrameCount,
   getClipDuration,
   getClipEnd,
   getMaxClipSourceOutFrames,
+  isStillImageAsset,
 } from '../model/queries';
 import {
   type Clip,
@@ -227,11 +244,27 @@ export function removeClips(project: Project, input: RemoveClipsInput): EditResu
   return updateSequence(project, input.sequenceId, (sequence) => {
     const ids = new Set(input.clipIds.filter((id) => sequence.clips[id]));
     if (ids.size === 0) return ok(sequence);
+    for (const clip of Object.values(sequence.clips)) {
+      if (clip.captionSourceId && ids.has(clip.captionSourceId)) ids.add(clip.id);
+      if (clip.speechSourceId && ids.has(clip.speechSourceId)) ids.add(clip.id);
+    }
     for (const id of ids) {
       const track = findTrack(sequence, (sequence.clips[id]!).trackId);
       if (track?.locked) return fail('LOCKED', `Track ${track.name} is locked.`);
     }
     const clips = { ...sequence.clips };
+    for (const id of ids) {
+      const clip = clips[id];
+      if (!clip?.speechSourceId || ids.has(clip.speechSourceId)) continue;
+      const text = clips[clip.speechSourceId];
+      if (!text?.speaks) continue;
+      clips[clip.speechSourceId] = {
+        ...text,
+        speaks: false,
+        spokenText: null,
+        linkId: text.linkId === id ? null : text.linkId,
+      };
+    }
     for (const id of ids) {
       const clip = clips[id];
       if (!clip?.linkId) continue;
@@ -297,11 +330,13 @@ function splitClipInSequence(
   if (!Number.isInteger(frame) || frame <= clip.start || frame >= getClipEnd(clip)) {
     return fail('INVALID_ARGUMENT', 'The split point must be inside the clip.');
   }
-  const cut = clip.sourceIn + (frame - clip.start);
+  const cutLocal = frame - clip.start;
+  const cut = Math.min(clip.sourceOut - 1, Math.max(clip.sourceIn + 1, clip.sourceIn + sourceFramesForTimeline(cutLocal, clip.speed)));
   const left: Clip = {
     ...clip,
     sourceOut: cut,
     transitions: transitionsForSplitLeft(clip),
+    animation: refitClipAnimation(clip.animation ?? {}, 0, cutLocal),
   };
   const right: Clip = {
     ...createClip({
@@ -314,12 +349,18 @@ function splitClipInSequence(
       sourceIn: cut,
       sourceOut: clip.sourceOut,
       linkId: null,
+      ...(clip.captionSourceId ? { captionSourceId: clip.captionSourceId } : {}),
+      speaks: clip.speaks,
+      spokenText: clip.spokenText,
+      speechSourceId: clip.speechSourceId,
     }),
     enabled: clip.enabled,
     transform: clip.transform,
     audio: clip.audio,
     transitions: transitionsForSplitRight(clip),
     effects: clip.effects,
+    speed: clip.speed,
+    animation: refitClipAnimation(clip.animation ?? {}, cutLocal, getClipDuration(clip) - cutLocal),
   };
   if (sequence.clips[right.id]) return fail('CONFLICT', `Clip ${right.id} already exists.`);
   const clips = { ...sequence.clips, [left.id]: left, [right.id]: right };
@@ -334,6 +375,23 @@ function relinkClips(sequence: Sequence, a: ClipId, b: ClipId): Sequence {
       ...sequence.clips,
       [a]: { ...sequence.clips[a]!, linkId: b },
       [b]: { ...sequence.clips[b]!, linkId: a },
+    },
+  };
+}
+
+/** Keeps a razor cut of spoken text pointed at its own half of the voice clip. */
+function bindSpeechPair(sequence: Sequence, a: ClipId, b: ClipId): Sequence {
+  const left = sequence.clips[a];
+  const right = sequence.clips[b];
+  const text = left?.speaks ? left : right?.speaks ? right : undefined;
+  const audio = text && text.id === left?.id ? right : left;
+  if (!text?.speaks || !audio || audio.id === text.id) return sequence;
+  return {
+    ...sequence,
+    clips: {
+      ...sequence.clips,
+      [audio.id]: { ...audio, speechSourceId: text.id, linkId: text.id },
+      [text.id]: { ...text, linkId: audio.id },
     },
   };
 }
@@ -360,38 +418,54 @@ function trimClipInSequence(
   edge: 'start' | 'end',
   frame: number,
   maxSourceOutFrames: number,
+  extendStart: boolean,
 ): Result<Sequence, TimelineError> {
   const clip = sequence.clips[clipId];
   if (!clip) return fail('NOT_FOUND', `Clip ${clipId} does not exist.`);
   const track = findTrack(sequence, clip.trackId);
   if (track?.locked) return fail('LOCKED', `Track ${track.name} is locked.`);
-  const end = getClipEnd(clip);
   const trimFrame = Math.round(frame);
   if (!Number.isFinite(trimFrame)) return fail('INVALID_ARGUMENT', 'Trim frame must be an integer.');
 
   let next: Clip;
   if (edge === 'start') {
-    const minStart = Math.max(0, clip.start - clip.sourceIn);
-    if (trimFrame < minStart || trimFrame > end - MIN_CLIP_DURATION_FRAMES) {
+    const bounds = clipStartTrimBounds(clip, maxSourceOutFrames, extendStart);
+    const minStart = Math.min(bounds.max, Math.max(bounds.min, clipStartFloor(sequence, clip)));
+    if (trimFrame < minStart || trimFrame > bounds.max) {
       return fail('INVALID_ARGUMENT', 'Trim start must stay inside the clip and media bounds.');
     }
-    const delta = trimFrame - clip.start;
-    const sourceIn = clip.sourceIn + delta;
-    if (sourceIn < 0 || sourceIn >= clip.sourceOut) {
-      return fail('INVALID_ARGUMENT', 'Trim start exceeds the media duration.');
-    }
-    next = { ...clip, start: trimFrame, sourceIn };
+    const points = clipStartTrim(clip, trimFrame, maxSourceOutFrames, extendStart);
+    if (!points) return fail('INVALID_ARGUMENT', 'Trim start exceeds the media duration.');
+    const delta = points.start - clip.start;
+    next = {
+      ...clip,
+      start: points.start,
+      sourceIn: points.sourceIn,
+      sourceOut: points.sourceOut,
+      animation: refitClipAnimation(
+        clip.animation ?? {},
+        delta,
+        timelineFrameCount(points.sourceOut - points.sourceIn, clip.speed),
+      ),
+    };
   } else {
     const minEnd = clip.start + MIN_CLIP_DURATION_FRAMES;
-    const maxEnd = clip.start + (maxSourceOutFrames - clip.sourceIn);
+    const maxEnd = clip.start + timelineFrameCount(Math.max(0, maxSourceOutFrames - clip.sourceIn), clip.speed);
     if (trimFrame < minEnd || trimFrame > maxEnd) {
       return fail('INVALID_ARGUMENT', 'Trim end must stay inside the clip and media bounds.');
     }
-    const sourceOut = clip.sourceIn + (trimFrame - clip.start);
-    if (sourceOut <= clip.sourceIn || sourceOut > maxSourceOutFrames) {
+    const sourceOut = Math.min(
+      maxSourceOutFrames,
+      clip.sourceIn + Math.max(1, sourceFramesForTimeline(trimFrame - clip.start, clip.speed)),
+    );
+    if (sourceOut <= clip.sourceIn) {
       return fail('INVALID_ARGUMENT', 'Trim end exceeds the media duration.');
     }
-    next = { ...clip, sourceOut };
+    next = {
+      ...clip,
+      sourceOut,
+      animation: refitClipAnimation(clip.animation ?? {}, 0, trimFrame - clip.start),
+    };
   }
 
   const clips = { ...sequence.clips, [clipId]: next };
@@ -407,8 +481,9 @@ export function trimClip(project: Project, input: TrimClipInput): EditResult {
     const asset = clip.assetId ? project.mediaAssets[clip.assetId] : undefined;
     if (!clip.text && !asset) return fail('NOT_FOUND', 'Media for this clip is missing.');
     const maxSourceOut = clip.text ? TEXT_CLIP_MAX_SOURCE_FRAMES : getMaxClipSourceOutFrames(asset!, sequence);
+    const extendStart = clip.text !== null || (asset ? isStillImageAsset(asset) : false);
 
-    const first = trimClipInSequence(sequence, input.clipId, input.edge, input.frame, maxSourceOut);
+    const first = trimClipInSequence(sequence, input.clipId, input.edge, input.frame, maxSourceOut, extendStart);
     if (!first.ok) return first;
 
     let next = first.value;
@@ -422,7 +497,15 @@ export function trimClip(project: Project, input: TrimClipInput): EditResult {
           : partnerAsset
             ? getMaxClipSourceOutFrames(partnerAsset, sequence)
             : maxSourceOut;
-        const second = trimClipInSequence(next, partnerId, input.edge, input.frame, partnerMaxSourceOut);
+        const partnerExtends = partner.text !== null || (partnerAsset ? isStillImageAsset(partnerAsset) : false);
+        const second = trimClipInSequence(
+          next,
+          partnerId,
+          input.edge,
+          input.frame,
+          partnerMaxSourceOut,
+          partnerExtends,
+        );
         if (!second.ok) return second;
         next = second.value;
       }
@@ -452,6 +535,8 @@ export function splitClip(project: Project, input: SplitClipInput): EditResult {
         next = second.value.sequence;
         next = relinkClips(next, leftId, second.value.leftId);
         next = relinkClips(next, rightId, second.value.rightId);
+        next = bindSpeechPair(next, leftId, second.value.leftId);
+        next = bindSpeechPair(next, rightId, second.value.rightId);
         return ok(next);
       }
       next = clearClipLink(next, partnerId);
@@ -509,6 +594,9 @@ function mergeClipTransform(current: ClipTransform, patch: Partial<ClipTransform
     uniformScale,
     rotation: limit(patch.rotation, current.rotation, TRANSFORM_LIMITS.rotation),
     opacity: limit(patch.opacity, current.opacity, TRANSFORM_LIMITS.opacity),
+    anchorX: limit(patch.anchorX, current.anchorX, TRANSFORM_LIMITS.position),
+    anchorY: limit(patch.anchorY, current.anchorY, TRANSFORM_LIMITS.position),
+    blendMode: patch.blendMode ?? current.blendMode,
   };
 }
 
@@ -537,6 +625,245 @@ export function updateClipAudio(project: Project, input: UpdateClipAudioInput): 
     };
     const unchanged = next.volume === clip.audio.volume && next.pan === clip.audio.pan && next.muted === clip.audio.muted;
     return unchanged ? clip : { ...clip, audio: next };
+  });
+}
+
+export interface MotionEditInput {
+  readonly sequenceId: SequenceId;
+  readonly clipId: ClipId;
+  readonly transform: Partial<ClipTransform>;
+  /** Clip-local frame where animated channels receive a keyframe. */
+  readonly localFrame: number;
+}
+
+/** Writes static transform values, or a keyframe when that channel is animated. */
+export function applyMotionEdit(project: Project, input: MotionEditInput): EditResult {
+  return updateClip(project, input.sequenceId, input.clipId, (clip) => {
+    const frame = clampLocalFrame(clip, input.localFrame);
+    let animation = clip.animation ?? {};
+    const staticPatch: Partial<ClipTransform> = { ...input.transform };
+    for (const id of MOTION_CHANNELS) {
+      const value = input.transform[id];
+      if (value === undefined) continue;
+      const channel = animation[id];
+      if (!channel?.enabled) continue;
+      animation = { ...animation, [id]: upsertKeyframe(channel, frame, value) };
+      delete staticPatch[id];
+    }
+    const transform = mergeClipTransform(clip.transform, staticPatch);
+    const sameAnimation = animation === (clip.animation ?? {});
+    const sameTransform = (Object.keys(transform) as (keyof ClipTransform)[]).every((key) => transform[key] === clip.transform[key]);
+    return sameAnimation && sameTransform ? clip : { ...clip, transform, animation };
+  });
+}
+
+export interface SetMotionChannelInput {
+  readonly sequenceId: SequenceId;
+  readonly clipId: ClipId;
+  readonly channel: MotionChannelId;
+  readonly enabled: boolean;
+  readonly localFrame: number;
+}
+
+/** Turns keyframing on (seeding one key) or off (baking the current value). */
+export function setMotionChannelEnabled(project: Project, input: SetMotionChannelInput): EditResult {
+  return updateClip(project, input.sequenceId, input.clipId, (clip) => {
+    const frame = clampLocalFrame(clip, input.localFrame);
+    const current = channelAt(clip.animation ?? {}, input.channel);
+    if (current.enabled === input.enabled && (!input.enabled || current.keyframes.length > 0)) return clip;
+    const value = evaluateClipTransform(clip, clip.start + frame)[input.channel];
+    if (input.enabled) {
+      const seeded = upsertKeyframe({ enabled: true, keyframes: current.keyframes }, frame, value);
+      return { ...clip, animation: { ...clip.animation, [input.channel]: { ...seeded, enabled: true } } };
+    }
+    const transform = mergeClipTransform(clip.transform, { [input.channel]: value });
+    return {
+      ...clip,
+      transform,
+      animation: { ...clip.animation, [input.channel]: { enabled: false, keyframes: [] } },
+    };
+  });
+}
+
+export interface ToggleKeyframeInput {
+  readonly sequenceId: SequenceId;
+  readonly clipId: ClipId;
+  readonly channel: MotionChannelId;
+  readonly localFrame: number;
+}
+
+/** Adds a keyframe at the frame, or removes the one already there. */
+export function toggleKeyframeAtFrame(project: Project, input: ToggleKeyframeInput): EditResult {
+  return updateClip(project, input.sequenceId, input.clipId, (clip) => {
+    const frame = clampLocalFrame(clip, input.localFrame);
+    const current = channelAt(clip.animation ?? {}, input.channel);
+    if (!current.enabled) return clip;
+    const existing = keyframeAtFrame(current, frame);
+    const keyframes = existing
+      ? current.keyframes.filter((key) => key.id !== existing.id)
+      : upsertKeyframe(current, frame, evaluateClipTransform(clip, clip.start + frame)[input.channel]).keyframes;
+    return { ...clip, animation: { ...clip.animation, [input.channel]: { enabled: true, keyframes } } };
+  });
+}
+
+export interface MoveKeyframeInput {
+  readonly sequenceId: SequenceId;
+  readonly clipId: ClipId;
+  readonly channel: MotionChannelId;
+  readonly keyframeId: string;
+  readonly frame: number;
+}
+
+export interface KeyframeMove {
+  readonly channel: MotionChannelId;
+  readonly keyframeId: string;
+  readonly frame: number;
+}
+
+export interface MoveKeyframesInput {
+  readonly sequenceId: SequenceId;
+  readonly clipId: ClipId;
+  readonly moves: readonly KeyframeMove[];
+}
+
+/** Moves many keyframes in one edit. A channel is left untouched when two keys would share a frame. */
+export function moveKeyframes(project: Project, input: MoveKeyframesInput): EditResult {
+  return updateClip(project, input.sequenceId, input.clipId, (clip) => {
+    const grouped = new Map<MotionChannelId, Map<string, number>>();
+    for (const move of input.moves) {
+      const targets = grouped.get(move.channel) ?? new Map<string, number>();
+      targets.set(move.keyframeId, clampLocalFrame(clip, move.frame));
+      grouped.set(move.channel, targets);
+    }
+    let animation = clip.animation;
+    let changed = false;
+    for (const [channelId, targets] of grouped) {
+      const channel = channelAt(animation, channelId);
+      const keyframes = channel.keyframes.map((key) => {
+        const frame = targets.get(key.id);
+        if (frame === undefined || frame === key.frame) return key;
+        return { ...key, frame };
+      });
+      const frames = keyframes.map((key) => key.frame);
+      if (new Set(frames).size !== frames.length) continue;
+      if (keyframes.every((key, index) => key === channel.keyframes[index])) continue;
+      animation = { ...animation, [channelId]: { ...channel, keyframes } };
+      changed = true;
+    }
+    return changed ? { ...clip, animation } : clip;
+  });
+}
+
+function fitTransitions(clip: Clip, duration: number): Clip['transitions'] {
+  const max = maxTransitionFramesForClip(duration);
+  const fit = (edge: Clip['transitions']['in']) =>
+    edge && edge.durationFrames > max ? { ...edge, durationFrames: max } : edge;
+  const inEdge = fit(clip.transitions.in);
+  const outEdge = fit(clip.transitions.out);
+  if (inEdge === clip.transitions.in && outEdge === clip.transitions.out) return clip.transitions;
+  return { in: inEdge, out: outEdge };
+}
+
+/** Pushes later clips on one track so a longer clip does not overlap them. */
+function shiftTail(sequence: Sequence, trackId: TrackId, fromFrame: number, delta: number): Sequence {
+  if (delta <= 0) return sequence;
+  const track = findTrack(sequence, trackId);
+  if (!track || track.locked) return sequence;
+  let clips = sequence.clips;
+  let changed = false;
+  for (const id of track.clipIds) {
+    const current = clips[id];
+    if (!current || current.start < fromFrame) continue;
+    clips = { ...clips, [id]: { ...current, start: current.start + delta } };
+    changed = true;
+  }
+  return changed ? { ...sequence, clips } : sequence;
+}
+
+export function setClipSpeed(
+  project: Project,
+  input: { readonly sequenceId: SequenceId; readonly clipId: ClipId; readonly speed: number },
+): EditResult {
+  const speed = clipSpeedPercent(input.speed);
+  return updateSequence(project, input.sequenceId, (sequence) => {
+    const clip = sequence.clips[input.clipId];
+    if (!clip) return fail('NOT_FOUND', `Clip ${input.clipId} does not exist.`);
+    const track = findTrack(sequence, clip.trackId);
+    if (track?.locked) return fail('LOCKED', `Track ${track.name} is locked.`);
+
+    const targets = [clip];
+    if (clip.linkId && sequence.clips[clip.linkId]) {
+      const partner = sequence.clips[clip.linkId]!;
+      const partnerTrack = findTrack(sequence, partner.trackId);
+      if (!partnerTrack?.locked) targets.push(partner);
+    }
+
+    let clips = sequence.clips;
+    const ripples: { trackId: TrackId; fromFrame: number; delta: number }[] = [];
+    for (const current of targets) {
+      if (current.speed === speed) continue;
+      const oldDuration = getClipDuration(current);
+      const newDuration = timelineFrameCount(current.sourceOut - current.sourceIn, speed);
+      clips = {
+        ...clips,
+        [current.id]: {
+          ...current,
+          speed,
+          animation: scaleClipAnimation(current.animation ?? {}, oldDuration, newDuration),
+          transitions: fitTransitions(current, newDuration),
+        },
+      };
+      if (newDuration > oldDuration) {
+        ripples.push({ trackId: current.trackId, fromFrame: getClipEnd(current), delta: newDuration - oldDuration });
+      }
+    }
+    let next: Sequence = { ...sequence, clips };
+    for (const ripple of ripples) next = shiftTail(next, ripple.trackId, ripple.fromFrame, ripple.delta);
+    return ok(next);
+  });
+}
+
+export function moveKeyframe(project: Project, input: MoveKeyframeInput): EditResult {
+  return updateClip(project, input.sequenceId, input.clipId, (clip) => {
+    const channel = channelAt(clip.animation ?? {}, input.channel);
+    const key = channel.keyframes.find((item) => item.id === input.keyframeId);
+    if (!key) return clip;
+    const frame = clampLocalFrame(clip, input.frame);
+    if (channel.keyframes.some((item) => item.id !== key.id && item.frame === frame)) return clip;
+    const keyframes = channel.keyframes.map((item) => (item.id === key.id ? { ...item, frame } : item));
+    return { ...clip, animation: { ...clip.animation, [input.channel]: { ...channel, keyframes } } };
+  });
+}
+
+export interface SetKeyframeInterpolationInput {
+  readonly sequenceId: SequenceId;
+  readonly clipId: ClipId;
+  readonly channel: MotionChannelId;
+  readonly keyframeId: string;
+  readonly interpolation: KeyframeInterpolation;
+}
+
+export function setKeyframeInterpolation(project: Project, input: SetKeyframeInterpolationInput): EditResult {
+  return updateClip(project, input.sequenceId, input.clipId, (clip) => {
+    const channel = channelAt(clip.animation ?? {}, input.channel);
+    if (!channel.keyframes.some((key) => key.id === input.keyframeId)) return clip;
+    const keyframes = channel.keyframes.map((key) =>
+      key.id === input.keyframeId ? { ...key, interpolation: input.interpolation } : key,
+    );
+    return { ...clip, animation: { ...clip.animation, [input.channel]: { ...channel, keyframes } } };
+  });
+}
+
+export function resetMotionChannel(project: Project, input: Omit<SetMotionChannelInput, 'enabled' | 'localFrame'>): EditResult {
+  return updateClip(project, input.sequenceId, input.clipId, (clip) => {
+    const transform = mergeClipTransform(clip.transform, {
+      [input.channel]: DEFAULT_CLIP_TRANSFORM[input.channel],
+    });
+    return {
+      ...clip,
+      transform,
+      animation: { ...clip.animation, [input.channel]: { enabled: false, keyframes: [] } },
+    };
   });
 }
 

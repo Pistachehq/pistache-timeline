@@ -1,22 +1,26 @@
 import {
   audioEffectGainDb,
+  clipPitchAmount,
   clipTransitionAudioMultiplier,
   combinedClipTrackLinearGain,
   effectiveClipLinearGain,
   findTrack,
+  playbackRateForSpeed,
   type Clip,
   type ClipId,
   type MediaAssetId,
   type Sequence,
 } from '@timeline/core';
 import { type MediaHandle } from '@timeline/media';
+import { bindOutputTarget } from '../audio/audio-hardware';
 import { sourceTimeForFrame } from './frame-math';
+import { GrainPitchShift } from './grain-pitch';
 
 const SEEK_EPSILON = 0.06;
 const DRIFT_WHILE_PLAYING = 0.2;
 
 interface AudioLane {
-  readonly clipId: ClipId;
+  clipId: ClipId;
   readonly assetId: MediaAssetId;
   readonly element: HTMLMediaElement;
   readonly source: MediaElementAudioSourceNode;
@@ -26,6 +30,7 @@ interface AudioLane {
   readonly gate: GainNode;
   readonly gateAnalyser: AnalyserNode;
   readonly limiter: DynamicsCompressorNode;
+  readonly pitch: GrainPitchShift;
   readonly gain: GainNode;
   readonly panner: StereoPannerNode;
   fxKey: string;
@@ -108,6 +113,8 @@ function applyAudioChain(lane: AudioLane, clip: Clip): void {
     link(lane.gate);
     lane.gate.gain.value = 1;
   }
+  node.connect(lane.pitch.input);
+  node = lane.pitch.output;
   if (hasLimiter) link(lane.limiter);
   node.connect(lane.gain);
 }
@@ -144,6 +151,7 @@ export class ProgramAudioMixer {
   #analyser: AnalyserNode | null = null;
   #lanes = new Map<ClipId, AudioLane>();
   #timeDomain: Uint8Array | null = null;
+  #unbindOutput: (() => void) | null = null;
   #host: HTMLElement;
 
   constructor(host: HTMLElement) {
@@ -160,6 +168,8 @@ export class ProgramAudioMixer {
       master.connect(analyser);
       analyser.connect(ctx.destination);
       void ctx.resume();
+      this.#unbindOutput?.();
+      this.#unbindOutput = bindOutputTarget(ctx);
       this.#context = ctx;
       this.#master = master;
       this.#analyser = analyser;
@@ -189,6 +199,7 @@ export class ProgramAudioMixer {
       const gateAnalyser = ctx.createAnalyser();
       gateAnalyser.fftSize = 256;
       const limiter = ctx.createDynamicsCompressor();
+      const pitch = new GrainPitchShift(ctx);
       const gain = ctx.createGain();
       const panner = ctx.createStereoPanner();
       highpass.type = 'highpass';
@@ -206,6 +217,7 @@ export class ProgramAudioMixer {
         gate,
         gateAnalyser,
         limiter,
+        pitch,
         gain,
         panner,
         fxKey: '',
@@ -216,14 +228,56 @@ export class ProgramAudioMixer {
     }
   }
 
+  #destroyLane(lane: AudioLane): void {
+    const url = lane.element.src;
+    const sharesUrl = url !== '' && [...this.#lanes.values()].some((other) => other !== lane && other.element.src === url);
+    lane.pitch.dispose();
+    lane.element.pause();
+    if (!sharesUrl) {
+      lane.element.removeAttribute('src');
+      lane.element.load();
+    }
+    lane.element.remove();
+  }
+
   #removeLane(clipId: ClipId): void {
     const lane = this.#lanes.get(clipId);
     if (!lane) return;
-    lane.element.pause();
-    lane.element.removeAttribute('src');
-    lane.element.load();
-    lane.element.remove();
     this.#lanes.delete(clipId);
+    this.#destroyLane(lane);
+  }
+
+  /**
+   * Keep the element that is already playing this media. Tearing it down at a
+   * razor cut restarts the decoder and makes the next piece (a pitch change,
+   * another effect) stutter or drop out.
+   */
+  #reassignContinuations(
+    clips: readonly Clip[],
+    resolveHandle: (assetId: MediaAssetId) => MediaHandle | null,
+  ): void {
+    const wanted = new Set<ClipId>();
+    for (const clip of clips) {
+      if (clip.assetId) wanted.add(clip.id);
+    }
+    const spare: AudioLane[] = [];
+    for (const [id, lane] of this.#lanes) {
+      if (wanted.has(id)) continue;
+      this.#lanes.delete(id);
+      spare.push(lane);
+    }
+    for (const clip of clips) {
+      if (!clip.assetId || this.#lanes.has(clip.id)) continue;
+      const handle = resolveHandle(clip.assetId);
+      if (!handle) continue;
+      const index = spare.findIndex((lane) => lane.assetId === clip.assetId);
+      if (index < 0) continue;
+      const lane = spare.splice(index, 1)[0];
+      if (!lane) continue;
+      lane.clipId = clip.id;
+      this.#lanes.set(clip.id, lane);
+    }
+    for (const lane of spare) this.#destroyLane(lane);
   }
 
   sync(options: {
@@ -234,6 +288,7 @@ export class ProgramAudioMixer {
     readonly playing: boolean;
   }): void {
     const { clips, sequence, frame, resolveHandle, playing } = options;
+    this.#reassignContinuations(clips, resolveHandle);
     const active = new Set<ClipId>();
 
     for (const clip of clips) {
@@ -258,6 +313,7 @@ export class ProgramAudioMixer {
       }
 
       applyAudioChain(lane, clip);
+      lane.pitch.setAmount(clipPitchAmount(clip.effects.audio));
       if (this.#timeDomain) updateNoiseGate(lane, clip, this.#timeDomain);
       const { linear, pan } = laneGain(sequence, clip, frame);
       lane.gain.gain.value = Math.max(0, linear);
@@ -265,12 +321,17 @@ export class ProgramAudioMixer {
 
       const seconds = sourceTimeForFrame(clip, frame, sequence.frameRate);
       const el = lane.element;
+      const rate = playbackRateForSpeed(clip.speed);
+      const rateChanged = Math.abs(el.playbackRate - rate) > 0.001;
+      if (rateChanged) el.playbackRate = rate;
+      el.preservesPitch = true;
+      const drift = DRIFT_WHILE_PLAYING * Math.max(1, rate);
 
       if (playing) {
-        if (el.paused) {
+        if (el.paused || rateChanged) {
           if (Math.abs(el.currentTime - seconds) >= SEEK_EPSILON) el.currentTime = seconds;
-          void el.play().catch(() => undefined);
-        } else if (Math.abs(el.currentTime - seconds) > DRIFT_WHILE_PLAYING) {
+          if (el.paused) void el.play().catch(() => undefined);
+        } else if (Math.abs(el.currentTime - seconds) > drift) {
           el.currentTime = seconds;
         }
       } else {
@@ -300,6 +361,8 @@ export class ProgramAudioMixer {
 
   dispose(): void {
     for (const clipId of [...this.#lanes.keys()]) this.#removeLane(clipId);
+    this.#unbindOutput?.();
+    this.#unbindOutput = null;
     void this.#context?.close();
     this.#context = null;
     this.#master = null;

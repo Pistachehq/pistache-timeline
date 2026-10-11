@@ -45,16 +45,23 @@ const MENU_LAYOUT: MenuLayout = [
     items: [
       'tool.select',
       'tool.razor',
+      'tool.text',
+      'tool.speech',
+      '-',
+      'clip.split',
+      'view.snap',
       '-',
       'playback.toggle',
       'playback.goToStart',
       'playback.goToEnd',
       '-',
-      'view.zoomIn',
       'view.zoomOut',
+      'view.zoomIn',
       'view.zoomReset',
+      'view.zoomFit',
     ],
   },
+  { id: 'settings', label: 'Settings', items: ['settings.audio'] },
   { id: 'help', label: 'Help', items: ['help.about', 'help.repository'] },
 ];
 
@@ -68,10 +75,11 @@ export function useAppMenus(): MenuDefinition[] {
   const clipIds = useSelectionState((s) => s.clipIds);
   const assetId = useSelectionState((s) => s.assetId);
   const tool = useUiState((s) => s.tool);
+  const snapEnabled = useUiState((s) => s.snapEnabled);
   const playing = usePlaybackState((s) => s.playing);
 
   return useMemo(() => {
-    void [history, clipIds, assetId, tool, playing];
+    void [history, clipIds, assetId, tool, snapEnabled, playing];
     return MENU_LAYOUT.map((menu) => ({
       id: menu.id,
       label: menu.label,
@@ -90,5 +98,5 @@ export function useAppMenus(): MenuDefinition[] {
         };
       }),
     }));
-  }, [runtime, history, clipIds, assetId, tool, playing]);
+  }, [runtime, history, clipIds, assetId, tool, snapEnabled, playing]);
 }

@@ -4,6 +4,10 @@ import {
 
   type FrameRate,
 
+  getClipAtFrame,
+
+  getClipDuration,
+
   getClipsInRange,
 
   type MediaAssetId,
@@ -22,7 +26,8 @@ import { type DragEvent, memo, useMemo, useState } from 'react';
 
 import { useRuntime, useUiState } from '../../runtime/context';
 
-import { ASSET_DRAG_TYPE } from '../dnd';
+import { ASSET_DRAG_TYPE, effectDragInProgress, effectPayloadFromDrop } from '../dnd';
+import { aimTransition, effectPayloadMatchesClip } from '../project/apply-effect-payload';
 import { filesFromDataTransfer, isOsFileDrag } from '../file-drop';
 
 import { ClipItem } from './ClipItem';
@@ -106,8 +111,12 @@ export const TrackLane = memo(function TrackLane({
     !track.locked && isOsFileDrag(event.dataTransfer);
 
   const acceptsAssetDrag = (event: DragEvent<HTMLDivElement>): boolean => {
-    if (track.locked || !event.dataTransfer.types.includes(ASSET_DRAG_TYPE)) return false;
-    const assetId = runtime.stores.ui.getState().assetDrag;
+    if (track.locked) return false;
+    const dragging = runtime.stores.ui.getState().assetDrag;
+    const types = event.dataTransfer?.types;
+    const listed = types ? Array.from(types).includes(ASSET_DRAG_TYPE) : false;
+    if (!dragging && !listed) return false;
+    const assetId = dragging;
     const asset = assetId ? runtime.stores.project.getState().project.mediaAssets[assetId] : undefined;
     return (
       !!asset &&
@@ -199,11 +208,23 @@ export const TrackLane = memo(function TrackLane({
 
         if (razor) {
 
-          runtime.actions.edit.splitAtFrame(
+          const raw = pixelToFrame(laneOffsetX(event.clientX, event.currentTarget), pixelsPerFrame);
 
-            frameAtClientX(event.clientX, event.currentTarget),
+          const snapped = frameAtClientX(event.clientX, event.currentTarget);
 
-          );
+          const clip = getClipAtFrame(sequence, track, raw);
+
+          if (!clip) runtime.stores.ui.getState().notify('There is no clip to split at this position.', 'info');
+
+          else {
+
+            const end = clip.start + getClipDuration(clip);
+
+            const frame = snapped > clip.start && snapped < end ? snapped : raw;
+
+            runtime.actions.edit.splitClipAt(clip.id, frame);
+
+          }
 
           clearSnapGuides();
 
@@ -211,21 +232,31 @@ export const TrackLane = memo(function TrackLane({
 
         }
 
-        if (runtime.stores.ui.getState().tool === 'text') {
+        if (runtime.stores.ui.getState().tool === 'text' || runtime.stores.ui.getState().tool === 'speech') {
+          const speech = runtime.stores.ui.getState().tool === 'speech';
           if (track.kind !== 'video') {
             runtime.stores.ui.getState().notify('Text clips go on a video track.', 'warning');
             return;
           }
-          runtime.actions.edit.addTextClip({
-            trackId: track.id,
-            start: frameAtClientX(event.clientX, event.currentTarget),
-          });
+          const start = frameAtClientX(event.clientX, event.currentTarget);
+          if (speech) void runtime.actions.edit.addSpeechClip({ trackId: track.id, start });
+          else runtime.actions.edit.addTextClip({ trackId: track.id, start });
           clearSnapGuides();
         }
 
       }}
 
       onDragOver={(event) => {
+        const stored = runtime.stores.ui.getState().effectDrag;
+        if (!track.locked && effectDragInProgress(event.dataTransfer, stored)) {
+          const frame = frameAtClientX(event.clientX, event.currentTarget);
+          const clip = stored ? getClipAtFrame(sequence, track, frame) : undefined;
+          if (!stored || (clip && effectPayloadMatchesClip(stored, clip, track.kind))) {
+            event.preventDefault();
+            event.dataTransfer.dropEffect = 'copy';
+          }
+          return;
+        }
         if (!acceptsOsFileDrag(event) && !acceptsAssetDrag(event)) return;
         event.preventDefault();
         event.dataTransfer.dropEffect = 'copy';
@@ -245,6 +276,30 @@ export const TrackLane = memo(function TrackLane({
         setDropFrame(null);
         clearSnapGuides();
 
+        const storedEffect = runtime.stores.ui.getState().effectDrag;
+        if (effectDragInProgress(event.dataTransfer, storedEffect)) {
+          event.preventDefault();
+          const clip = getClipAtFrame(sequence, track, frame);
+          const dropped = effectPayloadFromDrop(event.dataTransfer, storedEffect);
+          if (!clip || !dropped) {
+            runtime.stores.ui.getState().notify('Drop the effect onto a clip.', 'warning');
+            return;
+          }
+          const duration = getClipDuration(clip);
+          const payload = aimTransition(dropped, duration > 0 ? (frame - clip.start) / duration : 0);
+          if (payload.kind === 'text-animation' && !clip.text) {
+            runtime.stores.ui.getState().notify('Text transitions only apply to text clips.', 'warning');
+            return;
+          }
+          if (!effectPayloadMatchesClip(payload, clip, track.kind)) {
+            runtime.stores.ui.getState().notify('This effect does not apply to this clip.', 'warning');
+            return;
+          }
+          runtime.stores.selection.getState().selectClips([clip.id], 'replace');
+          runtime.actions.edit.applyEffectLibraryPayload(clip.id, payload, 'Apply Effect');
+          return;
+        }
+
         if (acceptsOsFileDrag(event)) {
           event.preventDefault();
           const files = filesFromDataTransfer(event.dataTransfer);
@@ -259,7 +314,7 @@ export const TrackLane = memo(function TrackLane({
           return;
         }
 
-        const assetId = event.dataTransfer.getData(ASSET_DRAG_TYPE);
+        const assetId = event.dataTransfer.getData(ASSET_DRAG_TYPE) || runtime.stores.ui.getState().assetDrag || '';
         if (!assetId || !acceptsAssetDrag(event)) return;
         event.preventDefault();
         runtime.actions.edit.placeAssetOnTrack(assetId as MediaAssetId, track.id, frame);

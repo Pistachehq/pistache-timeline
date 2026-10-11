@@ -1,5 +1,7 @@
 import {
+  clipSpeedPercent,
   sequenceFrameForClipMedia,
+  sourceMediaFrame,
   type Clip,
   type FrameRate,
   framesToSeconds,
@@ -14,14 +16,15 @@ import {
  */
 export function sourceTimeForFrame(clip: Clip, frame: number, rate: FrameRate): number {
   const seqFrame = sequenceFrameForClipMedia(clip, frame);
-  const sourceFrame = clip.sourceIn + (seqFrame - clip.start);
-  return framesToSeconds(sourceFrame + 0.5, rate);
+  return framesToSeconds(sourceMediaFrame(clip, seqFrame) + 0.5, rate);
 }
 
 /** Sequence frame corresponding to the media element's current time. */
 export function frameForSourceTime(clip: Clip, seconds: number, rate: FrameRate): number {
   const sourceFrame = secondsToFrames(seconds, rate, 'floor');
-  return Math.min(getClipEnd(clip), clip.start + Math.max(0, sourceFrame - clip.sourceIn));
+  const speed = clipSpeedPercent(clip.speed) / 100;
+  const local = (sourceFrame - clip.sourceIn) / speed;
+  return Math.min(getClipEnd(clip), clip.start + Math.max(0, Math.round(local)));
 }
 
 /** Accumulates wall-clock time into whole frames for gaps without media. */

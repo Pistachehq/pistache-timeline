@@ -12,6 +12,9 @@ function limitVolume(value: number | undefined, current: number): number {
 
 export const MAX_TRACKS_PER_KIND = 99;
 
+/** V1–V3 and A1–A3 stay. Tracks created after those can be removed once empty. */
+export const BASE_TRACKS_PER_KIND = 3;
+
 export interface AddTrackInput {
   readonly sequenceId: SequenceId;
   readonly kind: TrackKind;
@@ -30,6 +33,36 @@ export function addTrack(project: Project, input: AddTrackInput): EditResult {
     }
     const track = createAudioTrack(list.length, input.trackId);
     return ok({ ...sequence, audioTracks: [...sequence.audioTracks, track] });
+  });
+}
+
+export interface RemoveTrackInput {
+  readonly sequenceId: SequenceId;
+  readonly trackId: TrackId;
+}
+
+/**
+ * Removes one video or audio track past the base three, and only when it holds
+ * no clips. Deleting a middle extra track leaves later extras removable.
+ */
+export function removeTrack(project: Project, input: RemoveTrackInput): EditResult {
+  return updateSequence(project, input.sequenceId, (sequence) => {
+    const track = findTrack(sequence, input.trackId);
+    if (!track) return fail('NOT_FOUND', `Track ${input.trackId} does not exist.`);
+    const list = track.kind === 'video' ? sequence.videoTracks : sequence.audioTracks;
+    const index = list.findIndex((item) => item.id === track.id);
+    if (index < BASE_TRACKS_PER_KIND) {
+      return fail('INVALID_ARGUMENT', `${track.name} is a base track and cannot be deleted.`);
+    }
+    const occupied =
+      track.clipIds.length > 0 || Object.values(sequence.clips).some((clip) => clip.trackId === track.id);
+    if (occupied) {
+      return fail('CONFLICT', `Clear ${track.name} before deleting it.`);
+    }
+    if (track.kind === 'video') {
+      return ok({ ...sequence, videoTracks: sequence.videoTracks.filter((item) => item.id !== track.id) });
+    }
+    return ok({ ...sequence, audioTracks: sequence.audioTracks.filter((item) => item.id !== track.id) });
   });
 }
 

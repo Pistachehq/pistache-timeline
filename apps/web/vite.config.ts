@@ -7,11 +7,12 @@ const workspaceRoot = fileURLToPath(new URL('../..', import.meta.url));
 
 const PRODUCTION_CSP = [
   "default-src 'self'",
-  "script-src 'self'",
+  "script-src 'self' 'wasm-unsafe-eval' https://cdn.jsdelivr.net",
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob:",
   "media-src 'self' blob:",
-  "connect-src 'self' blob:",
+  "connect-src 'self' blob: https://huggingface.co https://*.huggingface.co https://*.hf.co https://*.xethub.hf.co https://cdn.jsdelivr.net",
+  "worker-src 'self' blob: https://cdn.jsdelivr.net",
   "font-src 'self'",
   "object-src 'none'",
   "base-uri 'self'",
@@ -38,6 +39,12 @@ export default defineConfig({
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
     },
+  },
+  optimizeDeps: {
+    exclude: ['@huggingface/transformers'],
+  },
+  worker: {
+    format: 'es',
   },
   server: {
     port: 5173,

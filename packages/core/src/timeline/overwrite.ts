@@ -1,5 +1,6 @@
 import { type Result } from '@timeline/shared';
 import { getClipEnd, getTrackClips } from '../model/queries';
+import { sourceFramesForTimeline } from '../model/speed';
 import { type Clip, type ClipId, type Sequence, type Track } from '../model/types';
 import { type FrameRange, rangesOverlap } from './placement';
 
@@ -13,12 +14,12 @@ export type SplitClipFn = (sequence: Sequence, clipId: ClipId, frame: number) =>
 
 function trimClipLeading(clip: Clip, newStart: number): Clip {
   const delta = newStart - clip.start;
-  return { ...clip, start: newStart, sourceIn: clip.sourceIn + delta };
+  return { ...clip, start: newStart, sourceIn: clip.sourceIn + sourceFramesForTimeline(delta, clip.speed) };
 }
 
 function trimClipTrailing(clip: Clip, newEnd: number): Clip {
   const delta = getClipEnd(clip) - newEnd;
-  return { ...clip, sourceOut: clip.sourceOut - delta };
+  return { ...clip, sourceOut: clip.sourceOut - sourceFramesForTimeline(delta, clip.speed) };
 }
 
 function deleteClipFromSequence(sequence: Sequence, clipId: ClipId): Sequence {

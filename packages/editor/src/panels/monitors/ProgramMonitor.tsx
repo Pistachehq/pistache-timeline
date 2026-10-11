@@ -2,6 +2,7 @@ import { formatDisplayTime, getSequenceDuration, type Sequence } from '@timeline
 import { EmptyState, PanelFrame, Select } from '@timeline/ui';
 import { Clapperboard, Link2Off, Loader2 } from 'lucide-react';
 import { useEffect, useRef } from 'react';
+import { PlaybackDecodeScaleSelect } from '../../components/PlaybackDecodeScaleSelect';
 import { ProgramCompositeLayers } from './ProgramCompositeLayers';
 import { shortcutLabel } from '../../commands/commands';
 import { useElementSize } from '../../hooks/use-element-size';
@@ -160,6 +161,7 @@ export function ProgramMonitor() {
         <span className="min-w-24 shrink-0 text-right font-mono text-xs text-fg-subtle tabular-nums">
           {sequence ? formatDisplayTime(duration, sequence.frameRate, timeFormat) : ''}
         </span>
+        <PlaybackDecodeScaleSelect />
         <Select
           label="Preview scale"
           value={scale}

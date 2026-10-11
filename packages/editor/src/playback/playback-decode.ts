@@ -18,8 +18,8 @@ function letterboxMediaSize(
 }
 
 /**
- * Preview decode size in sequence pixels × `decodeFactor` (status bar playback quality).
- * Independent of program monitor zoom so ½ / ¼ / ⅛ always reduce decoder load.
+ * Preview size in sequence pixels × `decodeFactor` (Program preview quality).
+ * Half, quarter, and eighth draw the Program monitor smaller and scale it up.
  */
 export function programVideoDecodeSize(
   sequenceWidth: number,

@@ -68,6 +68,8 @@ function effectTitle(effect: VideoEffect | AudioEffect): string {
       return 'Noise gate';
     case 'limiter':
       return 'Limiter';
+    case 'pitch':
+      return 'Pitch';
     case 'crop':
       return 'Crop';
     case 'library':
@@ -340,6 +342,21 @@ function AudioEffectRow({
           disabled={disabled}
           onChange={(ceilingDb) => onChange({ ...effect, ceilingDb })}
         />
+      ) : null}
+      {effect.kind === 'pitch' ? (
+        <>
+          <NumberField
+            label="Pitch"
+            value={effect.amount}
+            min={-100}
+            max={100}
+            step={1}
+            precision={0}
+            disabled={disabled}
+            onChange={(amount) => onChange({ ...effect, amount })}
+          />
+          <p className="text-2xs text-fg-subtle">0 is the original pitch. 100 raises it an octave, −100 lowers it an octave.</p>
+        </>
       ) : null}
     </div>
   );

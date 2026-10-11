@@ -1,6 +1,7 @@
 import { Button, Dialog } from '@timeline/ui';
 import { useRuntime, useUiState } from '../../runtime/context';
 import { AboutDialog } from './AboutDialog';
+import { AudioHardwareDialog } from './AudioHardwareDialog';
 import { ExportDialog } from './ExportDialog';
 import { PromptDialog } from './PromptDialog';
 
@@ -12,6 +13,7 @@ export function DialogHost() {
 
   if (dialog?.kind === 'export') return <ExportDialog onClose={close} />;
   if (dialog?.kind === 'about') return <AboutDialog onClose={close} />;
+  if (dialog?.kind === 'audio-hardware') return <AudioHardwareDialog onClose={close} />;
   if (dialog?.kind === 'prompt') return <PromptDialog request={dialog.request} />;
   if (dialog?.kind === 'confirm') {
     const { request } = dialog;

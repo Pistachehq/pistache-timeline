@@ -41,6 +41,8 @@ export interface ClipText {
   readonly shadow: TextShadow | null;
   readonly outlineWidth: number;
   readonly outlineColor: string;
+  /** Plate behind the glyphs. `null` draws the text on the picture. */
+  readonly backgroundColor: string | null;
   readonly animation: TextAnimationId;
 }
 
@@ -60,6 +62,7 @@ export const DEFAULT_CLIP_TEXT: ClipText = {
   shadow: { color: '#000000cc', offsetX: 0, offsetY: 3, blur: 10 },
   outlineWidth: 0,
   outlineColor: '#000000',
+  backgroundColor: null,
   animation: 'none',
 };
 

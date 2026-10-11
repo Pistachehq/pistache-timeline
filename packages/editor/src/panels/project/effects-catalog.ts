@@ -202,6 +202,7 @@ const CORE_EFFECT_LIBRARY: readonly EffectLibraryEntry[] = [
   ),
   audioFx('gate', { kind: 'noise-gate', thresholdDb: -45 }, 'Noise gate'),
   audioFx('limiter', { kind: 'limiter', ceilingDb: -1 }, 'Limiter'),
+  audioFx('pitch', { kind: 'pitch', amount: 0 }, 'Pitch'),
 ];
 
 /** Core presets plus Premiere-style catalog entries. */

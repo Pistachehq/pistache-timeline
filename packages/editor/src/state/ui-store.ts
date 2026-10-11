@@ -10,7 +10,7 @@ import { createStore, type StoreApi } from 'zustand/vanilla';
 import { type EffectLibraryPayload } from '../panels/dnd';
 import { type EffectCategoryId } from '../panels/project/effects-catalog';
 
-export type EditTool = 'select' | 'razor' | 'text';
+export type EditTool = 'select' | 'razor' | 'text' | 'speech';
 export type MonitorScale = 'fit' | '25' | '50' | '100';
 /** Scales program-monitor decode size (lighter playback on long/high-res clips). */
 export type PlaybackDecodeScale = '1' | '0.5' | '0.25' | '0.125';
@@ -58,12 +58,24 @@ export interface ClipTrimState {
   readonly previews: readonly ClipTrimPreview[];
 }
 
+export type MarqueeOwner = 'timeline' | 'media';
+
+export interface MarqueeBounds {
+  readonly left: number;
+  readonly top: number;
+  readonly right: number;
+  readonly bottom: number;
+}
+
 export interface MarqueeState {
+  readonly owner: MarqueeOwner;
   readonly startX: number;
   readonly startY: number;
   readonly currentX: number;
   readonly currentY: number;
   readonly additive: boolean;
+  /** Section rectangle. The drawn box is clipped to this. */
+  readonly bounds: MarqueeBounds;
 }
 
 export interface ConfirmRequest {
@@ -86,6 +98,7 @@ export type ProjectBinTab = 'media' | 'effects';
 export type DialogState =
   | { readonly kind: 'export' }
   | { readonly kind: 'about' }
+  | { readonly kind: 'audio-hardware' }
   | { readonly kind: 'confirm'; readonly request: ConfirmRequest }
   | { readonly kind: 'prompt'; readonly request: PromptRequest };
 
@@ -128,6 +141,10 @@ export interface UiState {
   readonly textEditingClipId: ClipId | null;
   /** Folder/asset ids playing a short enter animation in the media bin. */
   readonly mediaBinPopInIds: readonly string[];
+  /** Audio track currently recording a voice over, if any. */
+  readonly voiceOverTrackId: TrackId | null;
+  /** Bumps when View or the toolbox asks the timeline to fit the sequence. */
+  readonly zoomFitNonce: number;
   setTool(tool: EditTool): void;
   setZoom(pixelsPerFrame: number): void;
   setProgramScale(scale: MonitorScale): void;
@@ -143,6 +160,7 @@ export interface UiState {
   notify(text: string, tone?: StatusTone): void;
   clearStatus(id: string): void;
   startTask(label: string): string;
+  updateTask(id: string, label: string): void;
   endTask(id: string): void;
   setClipDrag(drag: ClipDragState | null): void;
   setClipTrim(trim: ClipTrimState | null): void;
@@ -158,6 +176,8 @@ export interface UiState {
   setClipBlurEditId(clipId: ClipId | null): void;
   setTextEditingClipId(clipId: ClipId | null): void;
   flashMediaBinPopIn(ids: readonly string[]): void;
+  setVoiceOverTrackId(trackId: TrackId | null): void;
+  requestZoomFit(): void;
 }
 
 export type UiStore = StoreApi<UiState>;
@@ -191,6 +211,8 @@ export function createUiStore(): UiStore {
     clipBlurEditId: null,
     textEditingClipId: null,
     mediaBinPopInIds: [],
+    voiceOverTrackId: null,
+    zoomFitNonce: 0,
 
     setTool: (tool) => set({ tool }),
     setZoom: (pixelsPerFrame) => set({ pixelsPerFrame: clampZoom(pixelsPerFrame) }),
@@ -252,13 +274,22 @@ export function createUiStore(): UiStore {
       return id;
     },
 
+    updateTask(id, label) {
+      const tasks = get().tasks.map((task) => (task.id === id ? { ...task, label } : task));
+      set({ tasks });
+    },
+
     endTask: (id) => set({ tasks: get().tasks.filter((task) => task.id !== id) }),
     setClipDrag: (clipDrag) => set({ clipDrag }),
     setClipTrim: (clipTrim) => set({ clipTrim }),
     setMarquee: (marquee) => set({ marquee }),
     setAssetDrag: (assetDrag) => set({ assetDrag }),
-    setPlaybackMeter: (playbackMeterClipId, playbackMeterPeak) =>
-      set({ playbackMeterClipId, playbackMeterPeak: Math.max(0, Math.min(1, playbackMeterPeak)) }),
+    setPlaybackMeter: (playbackMeterClipId, playbackMeterPeak) => {
+      const peak = Math.max(0, Math.min(1, playbackMeterPeak));
+      const state = get();
+      if (state.playbackMeterClipId === playbackMeterClipId && state.playbackMeterPeak === peak) return;
+      set({ playbackMeterClipId, playbackMeterPeak: peak });
+    },
     setMediaBinOpenFolderId: (mediaBinOpenFolderId) => set({ mediaBinOpenFolderId }),
     setProjectBinTab: (projectBinTab) => set({ projectBinTab }),
     setEffectsBinOpenCategoryId: (effectsBinOpenCategoryId) =>
@@ -270,6 +301,9 @@ export function createUiStore(): UiStore {
     setClipBlurEditId: (clipBlurEditId) =>
       set({ clipBlurEditId, clipCropEditId: clipBlurEditId ? null : get().clipCropEditId }),
     setTextEditingClipId: (textEditingClipId) => set({ textEditingClipId }),
+
+    setVoiceOverTrackId: (voiceOverTrackId) => set({ voiceOverTrackId }),
+    requestZoomFit: () => set((state) => ({ zoomFitNonce: state.zoomFitNonce + 1 })),
 
     flashMediaBinPopIn(ids) {
       const unique = [...new Set(ids.filter(Boolean))];

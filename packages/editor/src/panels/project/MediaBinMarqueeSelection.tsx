@@ -1,16 +1,13 @@
 import { type MediaAssetId } from '@timeline/core';
 import { type RefObject, useEffect, useRef } from 'react';
 import { useRuntime, useUiState } from '../../runtime/context';
+import { clampToBounds, clientMarqueeBox, elementBounds, rectsIntersect } from '../marquee-geometry';
 
 const MARQUEE_THRESHOLD_PX = 4;
 
-function rectsIntersect(a: DOMRect, b: DOMRect): boolean {
-  return a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
-}
-
-function assetIdsInClientRect(rect: DOMRect): MediaAssetId[] {
+function assetIdsInClientRect(root: ParentNode, rect: DOMRect): MediaAssetId[] {
   const ids: MediaAssetId[] = [];
-  for (const el of document.querySelectorAll<HTMLElement>('[data-media-asset-id]')) {
+  for (const el of root.querySelectorAll<HTMLElement>('[data-media-asset-id]')) {
     if (rectsIntersect(el.getBoundingClientRect(), rect)) {
       ids.push(el.dataset.mediaAssetId as MediaAssetId);
     }
@@ -18,7 +15,7 @@ function assetIdsInClientRect(rect: DOMRect): MediaAssetId[] {
   return ids;
 }
 
-/** Click-drag on empty grid space to select media assets (marquee). Shift/Ctrl adds to selection. */
+/** Click-drag on empty grid space to select media assets. The rectangle stays inside the bin. */
 export function MediaBinMarqueeSelection({ gridRef }: { gridRef: RefObject<HTMLUListElement | null> }) {
   const runtime = useRuntime();
   const marquee = useUiState((s) => s.marquee);
@@ -41,11 +38,13 @@ export function MediaBinMarqueeSelection({ gridRef }: { gridRef: RefObject<HTMLU
         additive: event.shiftKey || event.ctrlKey || event.metaKey,
       };
       runtime.stores.ui.getState().setMarquee({
+        owner: 'media',
         startX: event.clientX,
         startY: event.clientY,
         currentX: event.clientX,
         currentY: event.clientY,
         additive: gesture.current.additive,
+        bounds: elementBounds(grid),
       });
     };
 
@@ -56,7 +55,7 @@ export function MediaBinMarqueeSelection({ gridRef }: { gridRef: RefObject<HTMLU
 
       const state = runtime.stores.ui.getState().marquee;
       runtime.stores.ui.getState().setMarquee(null);
-      if (!state) return;
+      if (!state || state.owner !== 'media') return;
 
       const dx = Math.abs(state.currentX - state.startX);
       const dy = Math.abs(state.currentY - state.startY);
@@ -65,11 +64,9 @@ export function MediaBinMarqueeSelection({ gridRef }: { gridRef: RefObject<HTMLU
         return;
       }
 
-      const left = Math.min(state.startX, state.currentX);
-      const top = Math.min(state.startY, state.currentY);
-      const width = Math.abs(state.currentX - state.startX);
-      const height = Math.abs(state.currentY - state.startY);
-      const ids = assetIdsInClientRect(new DOMRect(left, top, width, height));
+      const box = clientMarqueeBox(state.startX, state.startY, state.currentX, state.currentY, state.bounds);
+      if (!box) return;
+      const ids = assetIdsInClientRect(grid, new DOMRect(box.left, box.top, box.width, box.height));
       runtime.stores.selection.getState().selectAssets(ids, state.additive ? 'add' : 'replace');
     };
 
@@ -77,8 +74,10 @@ export function MediaBinMarqueeSelection({ gridRef }: { gridRef: RefObject<HTMLU
       const g = gesture.current;
       if (!g || g.pointerId !== event.pointerId) return;
       const m = runtime.stores.ui.getState().marquee;
-      if (!m) return;
-      runtime.stores.ui.getState().setMarquee({ ...m, currentX: event.clientX, currentY: event.clientY });
+      if (!m || m.owner !== 'media') return;
+      const bounds = elementBounds(grid);
+      const point = clampToBounds(event.clientX, event.clientY, bounds);
+      runtime.stores.ui.getState().setMarquee({ ...m, bounds, currentX: point.x, currentY: point.y });
     };
 
     grid.addEventListener('pointerdown', onPointerDown, { capture: true });
@@ -93,18 +92,15 @@ export function MediaBinMarqueeSelection({ gridRef }: { gridRef: RefObject<HTMLU
     };
   }, [runtime, gridRef]);
 
-  if (!marquee) return null;
-
-  const left = Math.min(marquee.startX, marquee.currentX);
-  const top = Math.min(marquee.startY, marquee.currentY);
-  const width = Math.abs(marquee.currentX - marquee.startX);
-  const height = Math.abs(marquee.currentY - marquee.startY);
+  if (!marquee || marquee.owner !== 'media') return null;
+  const box = clientMarqueeBox(marquee.startX, marquee.startY, marquee.currentX, marquee.currentY, marquee.bounds);
+  if (!box) return null;
 
   return (
     <div
       aria-hidden
-      className="pointer-events-none fixed z-[100] border border-accent bg-accent/15"
-      style={{ left, top, width, height }}
+      className="pointer-events-none fixed z-[30] border border-accent bg-accent/15"
+      style={box}
       data-testid="media-marquee"
     />
   );

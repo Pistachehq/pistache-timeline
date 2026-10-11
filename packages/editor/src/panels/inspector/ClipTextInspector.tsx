@@ -1,5 +1,6 @@
 import {
   getClipDuration,
+  guessSpeechLanguage,
   maxTransitionFramesForClip,
   TEXT_ANIMATION_IDS,
   TRANSFORM_LIMITS,
@@ -138,6 +139,13 @@ export function ClipTextInspector({ clip, locked }: { readonly clip: Clip; reado
           onChange={(event) => patch({ content: event.target.value }, 'Edit Text')}
         />
       </label>
+      {clip.speaks ? (
+        <p className="text-xs text-fg-muted">
+          {text.content.trim()
+            ? `Linked audio speaks this text in ${guessSpeechLanguage(text.content) === 'es' ? 'Spanish' : 'English'}.`
+            : 'Linked audio stays silent until there is text to speak.'}
+        </p>
+      ) : null}
       <Select
         label="Font"
         disabled={locked}

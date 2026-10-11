@@ -8,6 +8,9 @@ allowBuilds:
   electron: true
   esbuild: true
   electron-winstaller: true
+  onnxruntime-node: true
+  protobufjs: true
+  sharp: true
 
 minimumReleaseAgeExclude:
   - lucide-react@1.53.0

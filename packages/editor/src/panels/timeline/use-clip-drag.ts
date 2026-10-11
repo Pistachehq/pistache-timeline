@@ -1,4 +1,4 @@
-import { getActiveSequence, type Clip, type Track, type TrackId } from '@timeline/core';
+import { getActiveSequence, getClipEnd, type Clip, type Track, type TrackId } from '@timeline/core';
 import { type PointerEvent as ReactPointerEvent, useRef } from 'react';
 import { useRuntime } from '../../runtime/context';
 import { type AutoCreateTrackKind } from '../../state/ui-store';
@@ -115,12 +115,17 @@ export function useClipDrag(clip: Clip, track: Track, pixelsPerFrame: number) {
 
     if (ui.getState().tool === 'razor') {
       if (!lane) return;
-      runtime.actions.edit.splitAtFrame(snapRazorFrame(lane, event.clientX));
+      const snapped = snapRazorFrame(lane, event.clientX);
+      const raw = laneFrameAt(event.clientX, lane, pixelsPerFrame);
+      const frame = snapped > clip.start && snapped < getClipEnd(clip) ? snapped : raw;
+      if (frame > clip.start && frame < getClipEnd(clip)) {
+        runtime.actions.edit.splitClipAt(clip.id, frame);
+      }
       clearSnapGuides();
       return;
     }
 
-    if (ui.getState().tool === 'text') {
+    if (ui.getState().tool === 'text' || ui.getState().tool === 'speech') {
       selection.getState().selectClips([clip.id]);
       if (clip.text) ui.getState().setTextEditingClipId(clip.id);
       return;

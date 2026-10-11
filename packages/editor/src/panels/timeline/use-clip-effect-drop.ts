@@ -1,19 +1,15 @@
 import { type Clip, type Track } from '@timeline/core';
 import { useCallback, useState, type DragEvent } from 'react';
-import { type EffectLibraryPayload } from '../dnd';
+import { effectDragInProgress, effectPayloadFromDrop } from '../dnd';
 import { useRuntime, useUiState } from '../../runtime/context';
-import { effectPayloadMatchesClip } from '../project/apply-effect-payload';
-import { isEffectDrag, readEffectDragData } from '../dnd';
+import { aimTransition, effectPayloadMatchesClip } from '../project/apply-effect-payload';
 
-/** Video transitions dropped on the first half become the in edge; the second half becomes the out edge. */
-function placeVideoTransition(payload: EffectLibraryPayload, event: DragEvent): EffectLibraryPayload {
-  if (payload.kind !== 'transition-in' && payload.kind !== 'transition-out') return payload;
-  if (payload.affectsVideo === false) return payload;
+function fractionAcross(event: DragEvent): number {
   const el = event.currentTarget;
-  if (!(el instanceof HTMLElement)) return payload;
+  if (!(el instanceof HTMLElement)) return 0;
   const rect = el.getBoundingClientRect();
-  const atEnd = event.clientX >= rect.left + rect.width / 2;
-  return { ...payload, kind: atEnd ? 'transition-out' : 'transition-in' };
+  if (rect.width <= 0) return 0;
+  return (event.clientX - rect.left) / rect.width;
 }
 
 export function useClipEffectDrop(clip: Clip, track: Track) {
@@ -23,9 +19,10 @@ export function useClipEffectDrop(clip: Clip, track: Track) {
 
   const onDragOver = useCallback(
     (event: DragEvent) => {
-      if (track.locked || !isEffectDrag(event.dataTransfer)) return;
-      const payload = runtime.stores.ui.getState().effectDrag ?? effectDrag;
-      if (!payload || !effectPayloadMatchesClip(payload, clip, track.kind)) return;
+      if (track.locked) return;
+      const stored = runtime.stores.ui.getState().effectDrag ?? effectDrag;
+      if (!effectDragInProgress(event.dataTransfer, stored)) return;
+      if (stored && !effectPayloadMatchesClip(stored, clip, track.kind)) return;
       event.preventDefault();
       event.stopPropagation();
       event.dataTransfer.dropEffect = 'copy';
@@ -41,12 +38,13 @@ export function useClipEffectDrop(clip: Clip, track: Track) {
 
   const onDrop = useCallback(
     (event: DragEvent) => {
-      if (track.locked || !isEffectDrag(event.dataTransfer)) return;
+      const stored = runtime.stores.ui.getState().effectDrag;
+      if (track.locked || !effectDragInProgress(event.dataTransfer, stored)) return;
       event.preventDefault();
       event.stopPropagation();
       setDropHint(false);
-      const dropped = readEffectDragData(event.dataTransfer);
-      const payload = dropped ? placeVideoTransition(dropped, event) : null;
+      const dropped = effectPayloadFromDrop(event.dataTransfer, stored);
+      const payload = dropped ? aimTransition(dropped, fractionAcross(event)) : null;
       if (payload?.kind === 'text-animation' && !clip.text) {
         runtime.stores.ui.getState().notify('Text transitions only apply to text clips.', 'warning');
         return;

@@ -6,6 +6,7 @@ import {
   type EffectRegion,
   type VideoEffect,
 } from '../model/effects';
+import { evaluateClipTransform } from '../model/animation';
 import { isCrossDissolveTransition } from '../model/transition-resolve';
 import { applyLibraryAmount, libraryEffectLook, scaleLibraryClipPath } from './library-look';
 import { transitionPaint, type TransitionPaint } from './transition-paint';
@@ -123,7 +124,7 @@ export function sequenceFrameForClipMedia(clip: Clip, sequenceFrame: number): nu
 }
 
 export function effectiveClipOpacityPercent(clip: Clip, sequenceFrame: number, sequence: Sequence): number {
-  const base = clip.transform.opacity;
+  const base = evaluateClipTransform(clip, sequenceFrame).opacity;
   return base * clipTransitionVisualMultiplier(clip, sequenceFrame, sequence);
 }
 

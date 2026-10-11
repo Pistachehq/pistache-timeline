@@ -1,5 +1,6 @@
 import { createId } from '@timeline/shared';
 import { type FrameRate, type MediaTime } from '../time/rational';
+import { EMPTY_CLIP_ANIMATION } from './animation';
 import { type ClipText } from './text';
 import {
   CURRENT_SCHEMA_VERSION,
@@ -155,6 +156,10 @@ export interface CreateClipOptions {
   readonly sourceIn: number;
   readonly sourceOut: number;
   readonly linkId?: ClipId | null;
+  readonly captionSourceId?: ClipId | null;
+  readonly speaks?: boolean;
+  readonly spokenText?: string | null;
+  readonly speechSourceId?: ClipId | null;
 }
 
 export function createClip(options: CreateClipOptions): Clip {
@@ -168,10 +173,16 @@ export function createClip(options: CreateClipOptions): Clip {
     start: options.start,
     sourceIn: options.sourceIn,
     sourceOut: options.sourceOut,
+    speed: 100,
     transform: DEFAULT_CLIP_TRANSFORM,
+    animation: EMPTY_CLIP_ANIMATION,
     audio: DEFAULT_CLIP_AUDIO,
     transitions: DEFAULT_CLIP_TRANSITIONS,
     effects: DEFAULT_CLIP_EFFECTS,
     linkId: options.linkId ?? null,
+    captionSourceId: options.captionSourceId ?? null,
+    speaks: options.speaks ?? false,
+    spokenText: options.spokenText ?? null,
+    speechSourceId: options.speechSourceId ?? null,
   };
 }

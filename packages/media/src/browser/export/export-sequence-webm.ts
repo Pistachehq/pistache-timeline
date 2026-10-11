@@ -3,6 +3,7 @@ import {
   frameRateToNumber,
   getSequence,
   getStackedVideoClipsAt,
+  sourceMediaFrame,
   type Clip,
   type FrameRate,
   type MediaAssetId,
@@ -24,8 +25,7 @@ import { openSequentialVideo, type SequentialFrameSource } from './sequential-vi
 export type { BrowserExportContext } from './export-context';
 
 function sourceTimeForFrame(clip: Clip, frame: number, rate: FrameRate): number {
-  const sourceFrame = clip.sourceIn + (frame - clip.start);
-  return framesToSeconds(sourceFrame + 0.5, rate);
+  return framesToSeconds(sourceMediaFrame(clip, frame) + 0.5, rate);
 }
 
 async function seekVideoForExport(video: HTMLVideoElement, seconds: number, signal?: AbortSignal): Promise<void> {

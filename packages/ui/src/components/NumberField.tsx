@@ -17,6 +17,8 @@ export interface NumberFieldProps {
   unit?: string;
   disabled?: boolean;
   className?: string;
+  /** Hides the text label and uses a narrower value. The label is still the accessible name. */
+  compact?: boolean;
 }
 
 const DRAG_THRESHOLD_PX = 3;
@@ -42,6 +44,7 @@ export function NumberField({
   unit,
   disabled = false,
   className,
+  compact = false,
 }: NumberFieldProps) {
   const id = useId();
   const [editing, setEditing] = useState(false);
@@ -106,10 +109,12 @@ export function NumberField({
   };
 
   return (
-    <div className={cn('flex h-6 items-center gap-2', className)}>
-      <label htmlFor={id} className={cn('min-w-0 flex-1 truncate text-xs', disabled ? 'text-fg-disabled' : 'text-fg-muted')}>
-        {label}
-      </label>
+    <div className={cn('flex h-6 items-center gap-1', compact ? 'w-[4.5rem] shrink-0' : 'gap-2', className)}>
+      {compact ? null : (
+        <label htmlFor={id} className={cn('min-w-0 flex-1 truncate text-xs', disabled ? 'text-fg-disabled' : 'text-fg-muted')}>
+          {label}
+        </label>
+      )}
       {editing ? (
         <input
           id={id}
@@ -136,7 +141,8 @@ export function NumberField({
           aria-valuemax={Number.isFinite(max) ? max : undefined}
           aria-disabled={disabled}
           className={cn(
-            'w-20 cursor-ew-resize rounded-xs px-1 text-right font-mono text-xs tabular-nums',
+            'cursor-ew-resize rounded-xs px-1 text-right font-mono tabular-nums',
+            compact ? 'w-14 text-2xs' : 'w-20 text-xs',
             disabled ? 'cursor-not-allowed text-fg-disabled' : 'text-accent hover:bg-surface-3',
           )}
           onPointerDown={onPointerDown}

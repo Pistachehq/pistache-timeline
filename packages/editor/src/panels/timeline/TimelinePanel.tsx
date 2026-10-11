@@ -1,4 +1,5 @@
 import {
+  BASE_TRACKS_PER_KIND,
   fitZoom,
   getActiveSequence,
   getSequenceDuration,
@@ -45,6 +46,11 @@ interface RowsProps {
   visibleRange: FrameRange;
 }
 
+function trackListIndex(sequence: Sequence, track: Track): number {
+  const list = track.kind === 'video' ? sequence.videoTracks : sequence.audioTracks;
+  return list.findIndex((item) => item.id === track.id);
+}
+
 function TrackRows({ sequence, tracks, height, width, pixelsPerFrame, visibleRange }: RowsProps) {
   return tracks.map((track) => (
     <div
@@ -55,7 +61,7 @@ function TrackRows({ sequence, tracks, height, width, pixelsPerFrame, visibleRan
       data-track-kind={track.kind}
       data-track-locked={track.locked}
     >
-      <TrackHeader track={track} height={height} />
+      <TrackHeader track={track} height={height} removable={trackListIndex(sequence, track) >= BASE_TRACKS_PER_KIND} />
       <TrackLane
         sequence={sequence}
         track={track}
@@ -107,6 +113,18 @@ export function TimelinePanel() {
   const laneViewportWidth = Math.max(0, viewport.width - TRACK_HEADER_WIDTH);
   const visibleRange = useVisibleRange(scrollerRef, pixelsPerFrame, laneViewportWidth);
   const pendingAnchorRef = useZoomAnchoring(scrollerRef, pixelsPerFrame);
+  const duration = sequence ? getSequenceDuration(sequence) : 0;
+  const zoomFitNonce = useUiState((s) => s.zoomFitNonce);
+  const seenZoomFit = useRef(zoomFitNonce);
+
+  useLayoutEffect(() => {
+    if (seenZoomFit.current === zoomFitNonce) return;
+    if (!sequence) return;
+    seenZoomFit.current = zoomFitNonce;
+    pendingAnchorRef.current = 0;
+    runtime.stores.ui.getState().setZoom(fitZoom(duration, laneViewportWidth));
+    if (scrollerRef.current) scrollerRef.current.scrollLeft = 0;
+  }, [sequence, zoomFitNonce, duration, laneViewportWidth, runtime, pendingAnchorRef]);
 
   // Wheel: scrub playhead. Ctrl/⌘ + wheel zooms around the pointer. Non-passive listener.
   useEffect(() => {
@@ -150,19 +168,12 @@ export function TimelinePanel() {
     return <PanelFrame title="Timeline">{null}</PanelFrame>;
   }
 
-  const duration = getSequenceDuration(sequence);
   const contentWidth = Math.max(duration * pixelsPerFrame + TRAILING_SPACE_PX, laneViewportWidth);
   const videoTracks = [...sequence.videoTracks].reverse();
-  const zoomToFit = () => {
-    pendingAnchorRef.current = 0;
-    runtime.stores.ui.getState().setZoom(fitZoom(duration, laneViewportWidth));
-    if (scrollerRef.current) scrollerRef.current.scrollLeft = 0;
-  };
-
   return (
     <PanelFrame
       title={`Timeline: ${sequence.name}`}
-      actions={<TimelineToolbar onZoomToFit={zoomToFit} />}
+      actions={<TimelineToolbar />}
       data-testid="timeline-panel"
     >
       <div
@@ -170,15 +181,18 @@ export function TimelinePanel() {
         className={cn(
           'relative min-h-0 flex-1 overflow-auto bg-surface-0',
           tool === 'razor' && 'cursor-razor',
-          tool === 'text' && 'cursor-text',
+          (tool === 'text' || tool === 'speech') && 'cursor-text',
         )}
         data-testid="timeline-scroller"
       >
         <MarqueeSelection scrollerRef={scrollerRef} />
         <div className="relative isolate min-h-full bg-surface-0" style={{ width: TRACK_HEADER_WIDTH + contentWidth }}>
-          <div className="sticky top-0 z-30 flex" style={{ height: RULER_HEIGHT }}>
+          <div
+            className="pointer-events-none sticky top-0 z-40 flex bg-surface-2"
+            style={{ height: RULER_HEIGHT }}
+          >
             <div
-              className="sticky left-0 z-[30] flex shrink-0 items-center border-r border-b border-line bg-surface-2 px-2"
+              className="pointer-events-auto sticky left-0 z-40 flex shrink-0 items-center border-r border-b border-line bg-surface-2 px-2"
               style={{ width: TRACK_HEADER_WIDTH }}
             >
               <PlayheadTimecode frameRate={sequence.frameRate} />
@@ -200,7 +214,7 @@ export function TimelinePanel() {
             visibleRange={visibleRange}
           />
           <div
-            className="sticky left-0 z-[25] bg-surface-0"
+            className="pointer-events-none sticky left-0 z-[25] bg-surface-0"
             style={{ height: SECTION_DIVIDER_HEIGHT, width: '100%' }}
           />
           <TrackRows
