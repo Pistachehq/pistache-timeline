@@ -6,6 +6,8 @@ export * from './model/animation';
 export * from './model/defaults';
 export * from './audio/gain';
 export * from './audio/captions';
+export * from './audio/speech-language';
+export * from './operations/speech';
 export * from './model/caption-styles';
 export * from './model/factory';
 export * from './model/queries';

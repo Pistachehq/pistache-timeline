@@ -176,7 +176,7 @@ export function TimelinePanel() {
         className={cn(
           'relative min-h-0 flex-1 overflow-auto bg-surface-0',
           tool === 'razor' && 'cursor-razor',
-          tool === 'text' && 'cursor-text',
+          (tool === 'text' || tool === 'speech') && 'cursor-text',
         )}
         data-testid="timeline-scroller"
       >

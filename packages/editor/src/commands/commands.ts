@@ -26,6 +26,7 @@ export type CommandId =
   | 'tool.select'
   | 'tool.razor'
   | 'tool.text'
+  | 'tool.speech'
   | 'playback.toggle'
   | 'playback.stepBack'
   | 'playback.stepForward'
@@ -142,6 +143,12 @@ export const COMMANDS: readonly Command[] = [
     label: 'Text Tool',
     run: (rt) => rt.stores.ui.getState().setTool('text'),
     isChecked: (rt) => rt.stores.ui.getState().tool === 'text',
+  },
+  {
+    id: 'tool.speech',
+    label: 'Text to Speech',
+    run: (rt) => rt.stores.ui.getState().setTool('speech'),
+    isChecked: (rt) => rt.stores.ui.getState().tool === 'speech',
   },
 
   {
@@ -262,6 +269,7 @@ export const DEFAULT_KEYMAP: Keymap = {
   'tool.select': ['V'],
   'tool.razor': ['C'],
   'tool.text': ['T'],
+  'tool.speech': ['Shift+T'],
   'playback.toggle': ['Space'],
   'playback.stepBack': ['ArrowLeft'],
   'playback.stepForward': ['ArrowRight'],

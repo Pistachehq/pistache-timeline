@@ -29,6 +29,8 @@ export interface ProjectState {
   readonly location: ProjectLocation | null;
 
   apply(label: string, edit: (project: Project) => EditResult): Result<Project, TimelineError>;
+  /** Applies an edit to the current project without recording an undo step. */
+  replacePresent(edit: (project: Project) => EditResult): Result<Project, TimelineError>;
   beginTransaction(label: string): void;
   commitTransaction(): void;
   cancelTransaction(): void;
@@ -57,6 +59,15 @@ export function createProjectStore(initial: Project, now: () => Date = () => new
         if (!result.ok || result.value === history.present) return result;
         const stamped: Project = { ...result.value, modifiedAt: now().toISOString() };
         setHistory(applyChange(history, label, stamped));
+        return { ok: true, value: stamped };
+      },
+
+      replacePresent(edit) {
+        const { history } = get();
+        const result = edit(history.present);
+        if (!result.ok || result.value === history.present) return result;
+        const stamped: Project = { ...result.value, modifiedAt: now().toISOString() };
+        setHistory({ ...history, present: stamped, future: [] });
         return { ok: true, value: stamped };
       },
 

@@ -11,6 +11,17 @@ const toSlider = (ppf: number) => ((Math.log(ppf) - LOG_MIN) / (LOG_MAX - LOG_MI
 const fromSlider = (value: number) => Math.exp(LOG_MIN + (value / 100) * (LOG_MAX - LOG_MIN));
 const ZOOM_WHEEL_SENSITIVITY = 0.0015;
 
+function SpeechToolIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M4 5h8" />
+      <path d="M8 5v13" />
+      <path d="M14 10h2.2l2.4-2v8l-2.4-2H14z" />
+      <path d="M20 11.2c.6.5.6 1.6 0 2.1" />
+    </svg>
+  );
+}
+
 export function TimelineToolbar({ onZoomToFit }: { onZoomToFit: () => void }) {
   const runtime = useRuntime();
   const tool = useUiState((s) => s.tool);
@@ -57,6 +68,14 @@ export function TimelineToolbar({ onZoomToFit }: { onZoomToFit: () => void }) {
         pressed={tool === 'text'}
         tone="accent"
         onClick={() => executeCommand('tool.text', runtime)}
+      />
+      <IconButton
+        label="Text to speech"
+        shortcut={shortcutLabel('tool.speech')}
+        icon={<SpeechToolIcon />}
+        pressed={tool === 'speech'}
+        tone="accent"
+        onClick={() => executeCommand('tool.speech', runtime)}
       />
       <IconButton
         label="Split at playhead"

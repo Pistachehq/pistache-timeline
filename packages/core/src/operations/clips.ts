@@ -246,12 +246,25 @@ export function removeClips(project: Project, input: RemoveClipsInput): EditResu
     if (ids.size === 0) return ok(sequence);
     for (const clip of Object.values(sequence.clips)) {
       if (clip.captionSourceId && ids.has(clip.captionSourceId)) ids.add(clip.id);
+      if (clip.speechSourceId && ids.has(clip.speechSourceId)) ids.add(clip.id);
     }
     for (const id of ids) {
       const track = findTrack(sequence, (sequence.clips[id]!).trackId);
       if (track?.locked) return fail('LOCKED', `Track ${track.name} is locked.`);
     }
     const clips = { ...sequence.clips };
+    for (const id of ids) {
+      const clip = clips[id];
+      if (!clip?.speechSourceId || ids.has(clip.speechSourceId)) continue;
+      const text = clips[clip.speechSourceId];
+      if (!text?.speaks) continue;
+      clips[clip.speechSourceId] = {
+        ...text,
+        speaks: false,
+        spokenText: null,
+        linkId: text.linkId === id ? null : text.linkId,
+      };
+    }
     for (const id of ids) {
       const clip = clips[id];
       if (!clip?.linkId) continue;
@@ -337,6 +350,9 @@ function splitClipInSequence(
       sourceOut: clip.sourceOut,
       linkId: null,
       ...(clip.captionSourceId ? { captionSourceId: clip.captionSourceId } : {}),
+      speaks: clip.speaks,
+      spokenText: clip.spokenText,
+      speechSourceId: clip.speechSourceId,
     }),
     enabled: clip.enabled,
     transform: clip.transform,
@@ -359,6 +375,23 @@ function relinkClips(sequence: Sequence, a: ClipId, b: ClipId): Sequence {
       ...sequence.clips,
       [a]: { ...sequence.clips[a]!, linkId: b },
       [b]: { ...sequence.clips[b]!, linkId: a },
+    },
+  };
+}
+
+/** Keeps a razor cut of spoken text pointed at its own half of the voice clip. */
+function bindSpeechPair(sequence: Sequence, a: ClipId, b: ClipId): Sequence {
+  const left = sequence.clips[a];
+  const right = sequence.clips[b];
+  const text = left?.speaks ? left : right?.speaks ? right : undefined;
+  const audio = text && text.id === left?.id ? right : left;
+  if (!text?.speaks || !audio || audio.id === text.id) return sequence;
+  return {
+    ...sequence,
+    clips: {
+      ...sequence.clips,
+      [audio.id]: { ...audio, speechSourceId: text.id, linkId: text.id },
+      [text.id]: { ...text, linkId: audio.id },
     },
   };
 }
@@ -502,6 +535,8 @@ export function splitClip(project: Project, input: SplitClipInput): EditResult {
         next = second.value.sequence;
         next = relinkClips(next, leftId, second.value.leftId);
         next = relinkClips(next, rightId, second.value.rightId);
+        next = bindSpeechPair(next, leftId, second.value.leftId);
+        next = bindSpeechPair(next, rightId, second.value.rightId);
         return ok(next);
       }
       next = clearClipLink(next, partnerId);

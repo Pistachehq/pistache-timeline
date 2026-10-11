@@ -91,7 +91,7 @@ export const ClipItem = memo(function ClipItem({
           ? 'z-30 opacity-90 shadow-popover'
           : razor
             ? 'cursor-inherit'
-            : tool === 'text'
+            : tool === 'text' || tool === 'speech'
               ? 'cursor-text'
               : 'cursor-grab',
         showDragOnLane && !dragGhost && 'cursor-grabbing',

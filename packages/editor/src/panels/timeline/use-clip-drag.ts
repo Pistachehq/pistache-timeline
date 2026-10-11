@@ -125,7 +125,7 @@ export function useClipDrag(clip: Clip, track: Track, pixelsPerFrame: number) {
       return;
     }
 
-    if (ui.getState().tool === 'text') {
+    if (ui.getState().tool === 'text' || ui.getState().tool === 'speech') {
       selection.getState().selectClips([clip.id]);
       if (clip.text) ui.getState().setTextEditingClipId(clip.id);
       return;

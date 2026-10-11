@@ -372,6 +372,11 @@ export function createMediaActions(services: EditorServices) {
       else selection.getState().retainAssets((id) => id !== assetId);
     },
 
+    /** Puts a generated file on an asset that is already in the project. */
+    adoptGeneratedAudio(asset: MediaAsset, handle: MediaHandle): void {
+      markOnline(asset, handle);
+    },
+
     /** Frees every media handle held for the current project. */
     releaseAll(): void {
       for (const entry of Object.values(media.getState().entries)) {

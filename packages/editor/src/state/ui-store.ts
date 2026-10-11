@@ -10,7 +10,7 @@ import { createStore, type StoreApi } from 'zustand/vanilla';
 import { type EffectLibraryPayload } from '../panels/dnd';
 import { type EffectCategoryId } from '../panels/project/effects-catalog';
 
-export type EditTool = 'select' | 'razor' | 'text';
+export type EditTool = 'select' | 'razor' | 'text' | 'speech';
 export type MonitorScale = 'fit' | '25' | '50' | '100';
 /** Scales program-monitor decode size (lighter playback on long/high-res clips). */
 export type PlaybackDecodeScale = '1' | '0.5' | '0.25' | '0.125';
@@ -157,6 +157,7 @@ export interface UiState {
   notify(text: string, tone?: StatusTone): void;
   clearStatus(id: string): void;
   startTask(label: string): string;
+  updateTask(id: string, label: string): void;
   endTask(id: string): void;
   setClipDrag(drag: ClipDragState | null): void;
   setClipTrim(trim: ClipTrimState | null): void;
@@ -266,6 +267,11 @@ export function createUiStore(): UiStore {
       const id = createId('task');
       set({ tasks: [...get().tasks, { id, label }] });
       return id;
+    },
+
+    updateTask(id, label) {
+      const tasks = get().tasks.map((task) => (task.id === id ? { ...task, label } : task));
+      set({ tasks });
     },
 
     endTask: (id) => set({ tasks: get().tasks.filter((task) => task.id !== id) }),

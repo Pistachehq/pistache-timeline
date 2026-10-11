@@ -657,7 +657,7 @@ export function ProgramCompositeLayers({ sequence }: { readonly sequence: Sequen
     const frame = outerRef.current;
     if (!frame) return;
     const hitId = hitTestProgramClipAt(event.clientX, event.clientY, frame, stack);
-    if (tool === 'text') {
+    if (tool === 'text' || tool === 'speech') {
       event.preventDefault();
       event.stopPropagation();
       const hit = hitId ? stack.find(({ clip }) => clip.id === hitId) : undefined;
@@ -676,12 +676,14 @@ export function ProgramCompositeLayers({ sequence }: { readonly sequence: Sequen
         runtime.stores.ui.getState().notify('Unlock a video track to add text.', 'warning');
         return;
       }
-      runtime.actions.edit.addTextClip({
+      const placement = {
         trackId: track.id,
         start: runtime.stores.playback.getState().playhead,
         positionX,
         positionY,
-      });
+      };
+      if (tool === 'speech') void runtime.actions.edit.addSpeechClip(placement);
+      else runtime.actions.edit.addTextClip(placement);
       return;
     }
     if (!hitId) return;
@@ -750,7 +752,7 @@ export function ProgramCompositeLayers({ sequence }: { readonly sequence: Sequen
   return (
     <div
       ref={outerRef}
-      className={tool === 'text' ? 'absolute inset-0 cursor-text overflow-hidden' : 'absolute inset-0 cursor-default overflow-hidden'}
+        className={tool === 'text' || tool === 'speech' ? 'absolute inset-0 cursor-text overflow-hidden' : 'absolute inset-0 cursor-default overflow-hidden'}
       onPointerDown={onPointerDown}
       data-testid="program-composite"
     >

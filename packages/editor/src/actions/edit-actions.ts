@@ -1,4 +1,5 @@
 import {
+  addMediaAssets,
   addCaptionClips,
   addClip,
   addTextClip,
@@ -24,6 +25,7 @@ import {
   pairedVideoTrack,
   updateSequence,
   type MediaAssetId,
+  markSpeechLink,
   moveClip,
   moveKeyframe,
   moveKeyframes,
@@ -64,7 +66,9 @@ import { applyEffectPayloadToClip } from '../panels/project/apply-effect-payload
 import { type AutoCreateTrackKind } from '../state/ui-store';
 import { currentSequence, type EditorServices } from '../runtime/services';
 import { type MediaActions } from './media-actions';
+import { createSpeechSync, loadSpeechWav } from './speech-sync';
 import { createVoiceOver } from './voice-over';
+import { silentSamples } from './wav-audio';
 
 type ClipMovePreview = { readonly clipId: ClipId; readonly trackId: TrackId; readonly start: number };
 
@@ -263,6 +267,7 @@ export function createEditActions(services: EditorServices, media: MediaActions)
     importRecording: async (file) => (await media.importLocalFiles([file], { quiet: true }))[0] ?? null,
     placeRecording: (assetId, trackId, start) => placeClip(assetId, trackId, start, 'Record Voice Over') !== null,
   });
+  createSpeechSync(services, media);
 
   return {
     /** Inserts the full asset at the playhead on the first suitable unlocked track. */
@@ -600,6 +605,112 @@ export function createEditActions(services: EditorServices, media: MediaActions)
         ui.getState().notify(result.error.message, result.error.code === 'LOCKED' ? 'warning' : 'error');
         return null;
       }
+      selection.getState().selectClips([clipId]);
+      ui.getState().setTextEditingClipId(clipId);
+      ui.getState().setTool('select');
+      playback.getState().setPlayhead(input.start);
+      return clipId;
+    },
+
+    async addSpeechClip(input: {
+      trackId: TrackId;
+      start: number;
+      positionX?: number;
+      positionY?: number;
+    }): Promise<ClipId | null> {
+      const sequence = currentSequence(services);
+      if (!sequence) {
+        ui.getState().notify('There is no active sequence.', 'error');
+        return null;
+      }
+      const clipId = newClipId();
+      const audioClipId = newClipId();
+      const loaded = await loadSpeechWav(
+        services.platform.media,
+        silentSamples(0.45),
+        16_000,
+        `Speech-${clipId}.wav`,
+        'Speech',
+      );
+      if (typeof loaded === 'string') {
+        ui.getState().notify(loaded, 'error');
+        return null;
+      }
+      const result = projectStore.getState().apply('Add Speech', (project) => {
+        const current = getSequence(project, sequence.id);
+        if (!current) {
+          return addTextClip(project, { sequenceId: sequence.id, trackId: input.trackId, start: input.start, clipId });
+        }
+        const fps = current.frameRate.numerator / current.frameRate.denominator;
+        const duration = Math.max(1, Math.round(fps * 5));
+        const target = findTrack(current, input.trackId);
+        const holdsPicture =
+          target?.kind === 'video' &&
+          target.clipIds.some((id) => {
+            const clip = current.clips[id];
+            return clip !== undefined && clip.text === null;
+          });
+        const occupied =
+          target?.kind === 'video' &&
+          !target.locked &&
+          (holdsPicture || !isRangeFree(current, target, input.start, duration));
+        const withAsset = addMediaAssets(project, [loaded.asset]);
+        if (!withAsset.ok) return withAsset;
+        let draft = withAsset.value;
+        let trackId = input.trackId;
+        if (occupied) {
+          const added = addTrack(draft, { sequenceId: current.id, kind: 'video' });
+          if (!added.ok) return added;
+          draft = added.value;
+          const created = getSequence(draft, current.id)?.videoTracks.at(-1);
+          if (created) trackId = created.id;
+        }
+        const texted = addTextClip(draft, {
+          sequenceId: current.id,
+          trackId,
+          start: input.start,
+          durationFrames: duration,
+          clipId,
+          ...(input.positionX !== undefined ? { positionX: input.positionX } : {}),
+          ...(input.positionY !== undefined ? { positionY: input.positionY } : {}),
+        });
+        if (!texted.ok) return texted;
+        const seq = getSequence(texted.value, current.id);
+        if (!seq) return texted;
+        const frames = Math.max(1, getAssetFrameCount(loaded.asset, seq));
+        let audioTrackId = seq.audioTracks.find(
+          (track) => !track.locked && isRangeFree(seq, track, input.start, frames),
+        )?.id;
+        let withTrack = texted.value;
+        if (!audioTrackId) {
+          const added = addTrack(withTrack, { sequenceId: current.id, kind: 'audio' });
+          if (!added.ok) return added;
+          withTrack = added.value;
+          audioTrackId = getSequence(withTrack, current.id)?.audioTracks.at(-1)?.id;
+        }
+        if (!audioTrackId) return texted;
+        const voiced = addClip(withTrack, {
+          sequenceId: current.id,
+          trackId: audioTrackId,
+          assetId: loaded.asset.id,
+          start: input.start,
+          sourceIn: 0,
+          sourceOut: frames,
+          clipId: audioClipId,
+        });
+        if (!voiced.ok) return voiced;
+        return markSpeechLink(voiced.value, {
+          sequenceId: current.id,
+          textClipId: clipId,
+          audioClipId,
+        });
+      });
+      if (!result.ok) {
+        services.platform.media.release(loaded.handle);
+        ui.getState().notify(result.error.message, result.error.code === 'LOCKED' ? 'warning' : 'error');
+        return null;
+      }
+      media.adoptGeneratedAudio(loaded.asset, loaded.handle);
       selection.getState().selectClips([clipId]);
       ui.getState().setTextEditingClipId(clipId);
       ui.getState().setTool('select');

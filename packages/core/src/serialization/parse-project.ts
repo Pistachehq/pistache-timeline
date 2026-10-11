@@ -390,6 +390,9 @@ function parseClip(value: unknown, path: string): Clip {
     effects: parseClipEffects(obj.effects, `${path}.effects`),
     linkId: obj.linkId == null ? null : (readString(obj, 'linkId', path) as ClipId),
     captionSourceId: obj.captionSourceId == null ? null : (readString(obj, 'captionSourceId', path) as ClipId),
+    speaks: obj.speaks === true,
+    spokenText: obj.spokenText == null ? null : readString(obj, 'spokenText', path),
+    speechSourceId: obj.speechSourceId == null ? null : (readString(obj, 'speechSourceId', path) as ClipId),
   };
 }
 

@@ -79,6 +79,8 @@ export function validateProjectInvariants(project: Project): string[] {
       if (!owners.has(clip.id)) issues.push(`clip ${clipId} is not listed on any track`);
       if (clip.text) {
         if (clip.assetId) issues.push(`text clip ${clipId} should not reference a media asset`);
+      } else if (clip.speaks) {
+        issues.push(`clip ${clipId} is marked as spoken text but has no text`);
       } else if (clip.captionSourceId) {
         issues.push(`clip ${clipId} is marked as a caption but has no text`);
       } else if (!clip.assetId || !project.mediaAssets[clip.assetId]) {
@@ -89,6 +91,9 @@ export function validateProjectInvariants(project: Project): string[] {
         issues.push(`clip ${clipId} has invalid source points`);
       } else if (clip.sourceOut <= clip.sourceIn) {
         issues.push(`clip ${clipId} has a non-positive duration`);
+      }
+      if (clip.speechSourceId && !sequence.clips[clip.speechSourceId]) {
+        issues.push(`clip ${clipId} speaks for missing clip ${clip.speechSourceId}`);
       }
     }
   }

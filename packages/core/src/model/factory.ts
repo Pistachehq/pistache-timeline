@@ -157,6 +157,9 @@ export interface CreateClipOptions {
   readonly sourceOut: number;
   readonly linkId?: ClipId | null;
   readonly captionSourceId?: ClipId | null;
+  readonly speaks?: boolean;
+  readonly spokenText?: string | null;
+  readonly speechSourceId?: ClipId | null;
 }
 
 export function createClip(options: CreateClipOptions): Clip {
@@ -178,5 +181,8 @@ export function createClip(options: CreateClipOptions): Clip {
     effects: DEFAULT_CLIP_EFFECTS,
     linkId: options.linkId ?? null,
     captionSourceId: options.captionSourceId ?? null,
+    speaks: options.speaks ?? false,
+    spokenText: options.spokenText ?? null,
+    speechSourceId: options.speechSourceId ?? null,
   };
 }

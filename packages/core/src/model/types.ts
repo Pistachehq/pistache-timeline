@@ -155,6 +155,12 @@ export interface Clip {
   readonly linkId: ClipId | null;
   /** Audio clip these words were generated from. `null` for ordinary clips. */
   readonly captionSourceId: ClipId | null;
+  /** This text clip owns a linked voice-over that is regenerated from its words. */
+  readonly speaks: boolean;
+  /** Words the linked voice was generated from. `null` until the first take. */
+  readonly spokenText: string | null;
+  /** Text clip this audio was spoken from. `null` for ordinary clips. */
+  readonly speechSourceId: ClipId | null;
 }
 
 interface TrackBase {

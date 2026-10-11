@@ -232,15 +232,15 @@ export const TrackLane = memo(function TrackLane({
 
         }
 
-        if (runtime.stores.ui.getState().tool === 'text') {
+        if (runtime.stores.ui.getState().tool === 'text' || runtime.stores.ui.getState().tool === 'speech') {
+          const speech = runtime.stores.ui.getState().tool === 'speech';
           if (track.kind !== 'video') {
             runtime.stores.ui.getState().notify('Text clips go on a video track.', 'warning');
             return;
           }
-          runtime.actions.edit.addTextClip({
-            trackId: track.id,
-            start: frameAtClientX(event.clientX, event.currentTarget),
-          });
+          const start = frameAtClientX(event.clientX, event.currentTarget);
+          if (speech) void runtime.actions.edit.addSpeechClip({ trackId: track.id, start });
+          else runtime.actions.edit.addTextClip({ trackId: track.id, start });
           clearSnapGuides();
         }
 
