@@ -32,6 +32,7 @@ import { TimelineToolbar } from './TimelineToolbar';
 import { TrackExpandDropZone } from './TrackExpandDropZone';
 import { TrackHeader } from './TrackHeader';
 import { TrackLane } from './TrackLane';
+import { useHandPan } from './use-hand-pan';
 import { playheadStepFromWheel, wheelShouldScrubPlayhead } from './timeline-wheel-playhead';
 import { useVisibleRange } from './use-visible-range';
 
@@ -113,6 +114,7 @@ export function TimelinePanel() {
   const laneViewportWidth = Math.max(0, viewport.width - TRACK_HEADER_WIDTH);
   const visibleRange = useVisibleRange(scrollerRef, pixelsPerFrame, laneViewportWidth);
   const pendingAnchorRef = useZoomAnchoring(scrollerRef, pixelsPerFrame);
+  const panning = useHandPan(scrollerRef);
   const duration = sequence ? getSequenceDuration(sequence) : 0;
   const zoomFitNonce = useUiState((s) => s.zoomFitNonce);
   const seenZoomFit = useRef(zoomFitNonce);
@@ -182,6 +184,7 @@ export function TimelinePanel() {
           'relative min-h-0 flex-1 overflow-auto bg-surface-0',
           tool === 'razor' && 'cursor-razor',
           (tool === 'text' || tool === 'speech') && 'cursor-text',
+          tool === 'hand' && (panning ? 'cursor-grabbing' : 'cursor-grab'),
         )}
         data-testid="timeline-scroller"
       >

@@ -653,7 +653,7 @@ export function ProgramCompositeLayers({ sequence }: { readonly sequence: Sequen
   }, [frameWidth, frameHeight, sequence.resolution]);
 
   const onPointerDown = (event: ReactPointerEvent) => {
-    if (event.button !== 0) return;
+    if (event.button !== 0 || tool === 'hand') return;
     const frame = outerRef.current;
     if (!frame) return;
     const hitId = hitTestProgramClipAt(event.clientX, event.clientY, frame, stack);
