@@ -1,5 +1,5 @@
 export const APP_NAME = 'Timeline';
-export const APP_VERSION = '0.1.0';
+export const APP_VERSION = '0.1.7';
 export const APP_REPOSITORY_URL = 'https://github.com/Pistachehq/pistache-timeline';
 
 /** File extension (without dot) used for saved Timeline projects. */

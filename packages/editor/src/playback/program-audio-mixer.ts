@@ -12,6 +12,7 @@ import {
   type Sequence,
 } from '@timeline/core';
 import { type MediaHandle } from '@timeline/media';
+import { bindOutputTarget } from '../audio/audio-hardware';
 import { sourceTimeForFrame } from './frame-math';
 import { GrainPitchShift } from './grain-pitch';
 
@@ -150,6 +151,7 @@ export class ProgramAudioMixer {
   #analyser: AnalyserNode | null = null;
   #lanes = new Map<ClipId, AudioLane>();
   #timeDomain: Uint8Array | null = null;
+  #unbindOutput: (() => void) | null = null;
   #host: HTMLElement;
 
   constructor(host: HTMLElement) {
@@ -166,6 +168,8 @@ export class ProgramAudioMixer {
       master.connect(analyser);
       analyser.connect(ctx.destination);
       void ctx.resume();
+      this.#unbindOutput?.();
+      this.#unbindOutput = bindOutputTarget(ctx);
       this.#context = ctx;
       this.#master = master;
       this.#analyser = analyser;
@@ -357,6 +361,8 @@ export class ProgramAudioMixer {
 
   dispose(): void {
     for (const clipId of [...this.#lanes.keys()]) this.#removeLane(clipId);
+    this.#unbindOutput?.();
+    this.#unbindOutput = null;
     void this.#context?.close();
     this.#context = null;
     this.#master = null;

@@ -39,6 +39,9 @@ export type CommandId =
   | 'view.zoomIn'
   | 'view.zoomOut'
   | 'view.zoomReset'
+  | 'view.zoomFit'
+  | 'view.snap'
+  | 'settings.audio'
   | 'help.about'
   | 'help.repository';
 
@@ -203,6 +206,22 @@ export const COMMANDS: readonly Command[] = [
     repeatable: true,
   },
   { id: 'view.zoomReset', label: 'Reset Zoom', run: (rt) => rt.stores.ui.getState().setZoom(2) },
+  { id: 'view.zoomFit', label: 'Zoom to Fit Sequence', run: (rt) => rt.stores.ui.getState().requestZoomFit() },
+  {
+    id: 'view.snap',
+    label: 'Snapping',
+    run: (rt) => {
+      const ui = rt.stores.ui.getState();
+      ui.setSnapEnabled(!ui.snapEnabled);
+    },
+    isChecked: (rt) => rt.stores.ui.getState().snapEnabled,
+  },
+
+  {
+    id: 'settings.audio',
+    label: 'Audio Hardware…',
+    run: (rt) => rt.stores.ui.getState().openDialog({ kind: 'audio-hardware' }),
+  },
 
   { id: 'help.about', label: 'About Timeline', run: (rt) => rt.stores.ui.getState().openDialog({ kind: 'about' }) },
   {

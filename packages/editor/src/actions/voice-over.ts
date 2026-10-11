@@ -1,4 +1,5 @@
 import { findTrack, type MediaAsset, type MediaAssetId, type TrackId } from '@timeline/core';
+import { getAudioHardware, microphoneConstraints } from '../audio/audio-hardware';
 import { currentSequence, type EditorServices } from '../runtime/services';
 
 interface VoiceOverHooks {
@@ -95,11 +96,21 @@ export function createVoiceOver(services: EditorServices, hooks: VoiceOverHooks)
     pendingTrackId = trackId;
     let stream: MediaStream;
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: microphoneConstraints(getAudioHardware().inputDeviceId),
+      });
     } catch (error) {
       clearArm(trackId);
       const denied = error instanceof DOMException && (error.name === 'NotAllowedError' || error.name === 'SecurityError');
-      ui.getState().notify(denied ? 'Microphone access was denied.' : 'Could not open the microphone.', 'error');
+      const missing = error instanceof DOMException && (error.name === 'NotFoundError' || error.name === 'OverconstrainedError');
+      ui.getState().notify(
+        denied
+          ? 'Microphone access was denied.'
+          : missing
+            ? 'The selected microphone is not available. Choose another one in Settings → Audio Hardware.'
+            : 'Could not open the microphone.',
+        'error',
+      );
       return;
     }
     if (token !== generation) {

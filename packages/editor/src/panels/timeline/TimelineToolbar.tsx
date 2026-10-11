@@ -22,7 +22,7 @@ function SpeechToolIcon() {
   );
 }
 
-export function TimelineToolbar({ onZoomToFit }: { onZoomToFit: () => void }) {
+export function TimelineToolbar() {
   const runtime = useRuntime();
   const tool = useUiState((s) => s.tool);
   const pixelsPerFrame = useUiState((s) => s.pixelsPerFrame);
@@ -88,7 +88,7 @@ export function TimelineToolbar({ onZoomToFit }: { onZoomToFit: () => void }) {
         icon={<Magnet />}
         pressed={snapEnabled}
         tone="accent"
-        onClick={() => runtime.stores.ui.getState().setSnapEnabled(!snapEnabled)}
+        onClick={() => executeCommand('view.snap', runtime)}
         data-testid="timeline-snap-toggle"
       />
       <span className="mx-1.5 h-4 w-px bg-line-strong" />
@@ -115,7 +115,11 @@ export function TimelineToolbar({ onZoomToFit }: { onZoomToFit: () => void }) {
           onClick={() => executeCommand('view.zoomIn', runtime)}
         />
       </div>
-      <IconButton label="Zoom to fit sequence" icon={<Maximize2 />} onClick={onZoomToFit} />
+      <IconButton
+        label="Zoom to fit sequence"
+        icon={<Maximize2 />}
+        onClick={() => executeCommand('view.zoomFit', runtime)}
+      />
     </div>
   );
 }

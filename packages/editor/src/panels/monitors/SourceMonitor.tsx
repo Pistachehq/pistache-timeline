@@ -20,6 +20,7 @@ import { AudioLines, ListPlus, MonitorPlay } from 'lucide-react';
 
 import { useEffect, useRef, useState } from 'react';
 
+import { bindOutputTarget } from '../../audio/audio-hardware';
 import { displayTimePlaceholder, useTimeDisplayFormat } from '../../hooks/use-format-display-time';
 import { useMediaState, useRuntime, useSelectionState } from '../../runtime/context';
 
@@ -126,6 +127,12 @@ export function SourceMonitor() {
 
 
 
+    const unbindVideo = bindOutputTarget(video);
+
+    const unbindAudio = bindOutputTarget(audio);
+
+
+
     for (const el of [video, audio]) {
 
       el.addEventListener('play', onPlay);
@@ -155,6 +162,10 @@ export function SourceMonitor() {
 
 
     return () => {
+
+      unbindVideo();
+
+      unbindAudio();
 
       unsubscribe();
 

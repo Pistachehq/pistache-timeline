@@ -98,6 +98,7 @@ export type ProjectBinTab = 'media' | 'effects';
 export type DialogState =
   | { readonly kind: 'export' }
   | { readonly kind: 'about' }
+  | { readonly kind: 'audio-hardware' }
   | { readonly kind: 'confirm'; readonly request: ConfirmRequest }
   | { readonly kind: 'prompt'; readonly request: PromptRequest };
 
@@ -142,6 +143,8 @@ export interface UiState {
   readonly mediaBinPopInIds: readonly string[];
   /** Audio track currently recording a voice over, if any. */
   readonly voiceOverTrackId: TrackId | null;
+  /** Bumps when View or the toolbox asks the timeline to fit the sequence. */
+  readonly zoomFitNonce: number;
   setTool(tool: EditTool): void;
   setZoom(pixelsPerFrame: number): void;
   setProgramScale(scale: MonitorScale): void;
@@ -174,6 +177,7 @@ export interface UiState {
   setTextEditingClipId(clipId: ClipId | null): void;
   flashMediaBinPopIn(ids: readonly string[]): void;
   setVoiceOverTrackId(trackId: TrackId | null): void;
+  requestZoomFit(): void;
 }
 
 export type UiStore = StoreApi<UiState>;
@@ -208,6 +212,7 @@ export function createUiStore(): UiStore {
     textEditingClipId: null,
     mediaBinPopInIds: [],
     voiceOverTrackId: null,
+    zoomFitNonce: 0,
 
     setTool: (tool) => set({ tool }),
     setZoom: (pixelsPerFrame) => set({ pixelsPerFrame: clampZoom(pixelsPerFrame) }),
@@ -298,6 +303,7 @@ export function createUiStore(): UiStore {
     setTextEditingClipId: (textEditingClipId) => set({ textEditingClipId }),
 
     setVoiceOverTrackId: (voiceOverTrackId) => set({ voiceOverTrackId }),
+    requestZoomFit: () => set((state) => ({ zoomFitNonce: state.zoomFitNonce + 1 })),
 
     flashMediaBinPopIn(ids) {
       const unique = [...new Set(ids.filter(Boolean))];

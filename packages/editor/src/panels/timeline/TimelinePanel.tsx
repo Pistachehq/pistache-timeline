@@ -113,6 +113,18 @@ export function TimelinePanel() {
   const laneViewportWidth = Math.max(0, viewport.width - TRACK_HEADER_WIDTH);
   const visibleRange = useVisibleRange(scrollerRef, pixelsPerFrame, laneViewportWidth);
   const pendingAnchorRef = useZoomAnchoring(scrollerRef, pixelsPerFrame);
+  const duration = sequence ? getSequenceDuration(sequence) : 0;
+  const zoomFitNonce = useUiState((s) => s.zoomFitNonce);
+  const seenZoomFit = useRef(zoomFitNonce);
+
+  useLayoutEffect(() => {
+    if (seenZoomFit.current === zoomFitNonce) return;
+    if (!sequence) return;
+    seenZoomFit.current = zoomFitNonce;
+    pendingAnchorRef.current = 0;
+    runtime.stores.ui.getState().setZoom(fitZoom(duration, laneViewportWidth));
+    if (scrollerRef.current) scrollerRef.current.scrollLeft = 0;
+  }, [sequence, zoomFitNonce, duration, laneViewportWidth, runtime, pendingAnchorRef]);
 
   // Wheel: scrub playhead. Ctrl/⌘ + wheel zooms around the pointer. Non-passive listener.
   useEffect(() => {
@@ -156,19 +168,12 @@ export function TimelinePanel() {
     return <PanelFrame title="Timeline">{null}</PanelFrame>;
   }
 
-  const duration = getSequenceDuration(sequence);
   const contentWidth = Math.max(duration * pixelsPerFrame + TRAILING_SPACE_PX, laneViewportWidth);
   const videoTracks = [...sequence.videoTracks].reverse();
-  const zoomToFit = () => {
-    pendingAnchorRef.current = 0;
-    runtime.stores.ui.getState().setZoom(fitZoom(duration, laneViewportWidth));
-    if (scrollerRef.current) scrollerRef.current.scrollLeft = 0;
-  };
-
   return (
     <PanelFrame
       title={`Timeline: ${sequence.name}`}
-      actions={<TimelineToolbar onZoomToFit={zoomToFit} />}
+      actions={<TimelineToolbar />}
       data-testid="timeline-panel"
     >
       <div
