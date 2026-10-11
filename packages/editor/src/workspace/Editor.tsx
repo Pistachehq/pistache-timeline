@@ -24,23 +24,24 @@ function Workspace({ runtime, keymap = DEFAULT_KEYMAP }: EditorProps) {
       <AppHeader />
       <main className="min-h-0 flex-1 p-1">
         <ResizableGroup orientation="vertical" storageId="workspace-rows">
-          <ResizablePanel id="top" defaultSize="52%" minSize={160}>
+          {/* Defaults match the local workspace: taller monitors, wider source. */}
+          <ResizablePanel id="top" defaultSize="57%" minSize={160}>
             <ResizableGroup orientation="horizontal" storageId="workspace-top">
-              <ResizablePanel id="source" defaultSize="30%" minSize={220}>
+              <ResizablePanel id="source" defaultSize="35%" minSize={220}>
                 <SourcePanel />
               </ResizablePanel>
               <ResizableHandle orientation="horizontal" />
-              <ResizablePanel id="program" defaultSize="45%" minSize={260}>
+              <ResizablePanel id="program" defaultSize="39%" minSize={260}>
                 <ProgramMonitor />
               </ResizablePanel>
               <ResizableHandle orientation="horizontal" />
-              <ResizablePanel id="inspector" defaultSize="25%" minSize={220}>
+              <ResizablePanel id="inspector" defaultSize="26%" minSize={220}>
                 <InspectorPanel />
               </ResizablePanel>
             </ResizableGroup>
           </ResizablePanel>
           <ResizableHandle orientation="vertical" />
-          <ResizablePanel id="bottom" defaultSize="48%" minSize={180}>
+          <ResizablePanel id="bottom" defaultSize="43%" minSize={180}>
             <ResizableGroup orientation="horizontal" storageId="workspace-bottom">
               <ResizablePanel id="project" defaultSize="24%" minSize={220}>
                 <ProjectPanel />

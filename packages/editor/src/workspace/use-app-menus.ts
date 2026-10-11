@@ -47,6 +47,7 @@ const MENU_LAYOUT: MenuLayout = [
       'tool.razor',
       'tool.text',
       'tool.speech',
+      'tool.hand',
       '-',
       'clip.split',
       'view.snap',

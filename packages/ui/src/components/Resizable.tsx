@@ -14,8 +14,9 @@ export interface ResizableGroupProps extends Omit<GroupProps, 'orientation'> {
 
 export function ResizableGroup({ orientation, storageId, className, ...props }: ResizableGroupProps) {
   const { defaultLayout, onLayoutChanged } = useDefaultLayout({
-    id: `timeline-layout:${storageId ?? 'ephemeral'}`,
+    id: `timeline-layout:v3:${storageId ?? 'ephemeral'}`,
     storage: storageId ? localStorage : memoryStorage,
+    onlySaveAfterUserInteractions: true,
   });
   return (
     <Group

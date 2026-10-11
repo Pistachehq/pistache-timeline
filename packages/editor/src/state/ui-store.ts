@@ -10,7 +10,7 @@ import { createStore, type StoreApi } from 'zustand/vanilla';
 import { type EffectLibraryPayload } from '../panels/dnd';
 import { type EffectCategoryId } from '../panels/project/effects-catalog';
 
-export type EditTool = 'select' | 'razor' | 'text' | 'speech';
+export type EditTool = 'select' | 'razor' | 'text' | 'speech' | 'hand';
 export type MonitorScale = 'fit' | '25' | '50' | '100';
 /** Scales program-monitor decode size (lighter playback on long/high-res clips). */
 export type PlaybackDecodeScale = '1' | '0.5' | '0.25' | '0.125';

@@ -1,6 +1,6 @@
 import { MAX_PIXELS_PER_FRAME, MIN_PIXELS_PER_FRAME } from '@timeline/core';
 import { IconButton, Slider } from '@timeline/ui';
-import { Magnet, Maximize2, MousePointer2, Scissors, SquareSplitHorizontal, Type, ZoomIn, ZoomOut } from 'lucide-react';
+import { Hand, Magnet, Maximize2, MousePointer2, Scissors, SquareSplitHorizontal, Type, ZoomIn, ZoomOut } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 import { executeCommand, shortcutLabel } from '../../commands/commands';
 import { useRuntime, useUiState } from '../../runtime/context';
@@ -76,6 +76,14 @@ export function TimelineToolbar() {
         pressed={tool === 'speech'}
         tone="accent"
         onClick={() => executeCommand('tool.speech', runtime)}
+      />
+      <IconButton
+        label="Hand tool"
+        shortcut={shortcutLabel('tool.hand')}
+        icon={<Hand />}
+        pressed={tool === 'hand'}
+        tone="accent"
+        onClick={() => executeCommand('tool.hand', runtime)}
       />
       <IconButton
         label="Split at playhead"
