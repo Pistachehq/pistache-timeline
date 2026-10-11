@@ -3,6 +3,7 @@ import {
   fitZoom,
   getActiveSequence,
   getSequenceDuration,
+  getVideoCoverage,
   type Sequence,
   type Track,
   zoomAroundAnchor,
@@ -10,7 +11,7 @@ import {
 } from '@timeline/core';
 import { PanelFrame } from '@timeline/ui';
 import { cn } from '@timeline/ui';
-import { type RefObject, useEffect, useLayoutEffect, useRef } from 'react';
+import { type RefObject, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { useElementSize } from '../../hooks/use-element-size';
 import { useRuntime, useUiState } from '../../runtime/context';
 import { useActiveSequence } from '../../runtime/hooks';
@@ -116,6 +117,7 @@ export function TimelinePanel() {
   const pendingAnchorRef = useZoomAnchoring(scrollerRef, pixelsPerFrame);
   const panning = useHandPan(scrollerRef);
   const duration = sequence ? getSequenceDuration(sequence) : 0;
+  const videoCoverage = useMemo(() => (sequence ? getVideoCoverage(sequence) : []), [sequence]);
   const zoomFitNonce = useUiState((s) => s.zoomFitNonce);
   const seenZoomFit = useRef(zoomFitNonce);
 
@@ -205,6 +207,7 @@ export function TimelinePanel() {
               pixelsPerFrame={pixelsPerFrame}
               frameRate={sequence.frameRate}
               width={laneViewportWidth}
+              videoCoverage={videoCoverage}
             />
           </div>
           <TrackExpandDropZone edge="video" sequence={sequence} pixelsPerFrame={pixelsPerFrame} />

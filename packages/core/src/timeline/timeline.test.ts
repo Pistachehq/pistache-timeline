@@ -1,6 +1,12 @@
 import { unwrap } from '@timeline/shared';
 import { describe, expect, it } from 'vitest';
-import { getAudibleClipsAt, getClipsInRange, getSplittableClipsAt } from '../model/queries';
+import {
+  getAudibleClipsAt,
+  getClipEnd,
+  getClipsInRange,
+  getSplittableClipsAt,
+  getVideoCoverage,
+} from '../model/queries';
 import { addClip } from '../operations/clips';
 import { activeSequence, setupProject } from '../test/fixtures';
 import { FrameRates, framesToSeconds, mediaTimeFromSeconds, mediaTimeToFrames, secondsToFrames } from '../time/rational';
@@ -31,6 +37,31 @@ describe('splittable clips', () => {
     expect(getSplittableClipsAt(seq, 100)).toHaveLength(2);
     expect(getSplittableClipsAt(seq, 30)).toHaveLength(1);
     expect(getSplittableClipsAt(seq, 0)).toHaveLength(0);
+  });
+});
+
+describe('video coverage', () => {
+  it('merges overlapping video clips across tracks and ignores audio tracks', () => {
+    const { project, sequence, video, audio } = setupProject();
+    const v1 = sequence.videoTracks[0]!.id;
+    const v2 = sequence.videoTracks[1]!.id;
+    let next = unwrap(addClip(project, { sequenceId: sequence.id, trackId: v1, assetId: video.id, start: 0 }));
+    next = unwrap(addClip(next, { sequenceId: sequence.id, trackId: v2, assetId: video.id, start: 60 }));
+    const lonelyStart = 2000;
+    next = unwrap(addClip(next, { sequenceId: sequence.id, trackId: v1, assetId: video.id, start: lonelyStart }));
+    next = unwrap(
+      addClip(next, { sequenceId: sequence.id, trackId: sequence.audioTracks[1]!.id, assetId: audio.id, start: 5000 }),
+    );
+    const seq = activeSequence(next);
+    const length = getClipEnd(seq.clips[seq.videoTracks[0]!.clipIds[0]!]!);
+    expect(getVideoCoverage(seq)).toEqual([
+      { start: 0, end: 60 + length },
+      { start: lonelyStart, end: lonelyStart + length },
+    ]);
+  });
+
+  it('is empty without video clips', () => {
+    expect(getVideoCoverage(sequenceWithClipsAt(0, 200).sequence)).toEqual([]);
   });
 });
 
