@@ -38,6 +38,7 @@
   --color-accent-fg: #ffffff;
 
   --color-playhead: #4c9bff;
+  --color-video-coverage: #e8d23a;
   /* Slim razor cursor; hotspot at blade tip (cut point). */
   --cursor-razor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none'%3E%3Cpath d='M1.5 12 11.75 8.35v7.3Z' fill='%23a8abb6'/%3E%3Cpath d='M1.5 12 11.75 8.35v7.3Z' stroke='%23e8eaef' stroke-width='0.4' stroke-linejoin='round'/%3E%3Cpath d='M2.8 12 10.2 9.15' stroke='%23ffffff' stroke-width='0.35' opacity='0.35' stroke-linecap='round'/%3E%3Cpath d='M11.75 9.5h5.75c.97 0 1.75.78 1.75 1.75v1.5c0 .97-.78 1.75-1.75 1.75H11.75' fill='%23202024' stroke='%235a5a64' stroke-width='0.45'/%3E%3Ccircle cx='15.2' cy='12' r='0.55' fill='%237a7a86'/%3E%3C/svg%3E")
     1 12,

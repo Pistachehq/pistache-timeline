@@ -29,7 +29,7 @@ export function AudioHardwareDialog({ onClose }: { onClose: () => void }) {
   const [prefs, setPrefs] = useState<AudioHardwarePrefs>(getAudioHardware);
   const [lists, setLists] = useState<AudioDeviceLists | null>(null);
   const [note, setNote] = useState<string | null>(null);
-  const [revealing, setRevealing] = useState(false);
+  const [requesting, setRequesting] = useState(false);
   const outputSupported = canSelectOutputDevice();
 
   const refresh = useCallback(async () => {
@@ -60,17 +60,21 @@ export function AudioHardwareDialog({ onClose }: { onClose: () => void }) {
     if (error) setNote(error);
   };
 
-  const onReveal = async () => {
-    setRevealing(true);
+  const onAllow = async () => {
+    setRequesting(true);
     setNote(null);
     try {
       await revealAudioDeviceNames();
       await refresh();
     } catch (error) {
       const denied = error instanceof DOMException && (error.name === 'NotAllowedError' || error.name === 'SecurityError');
-      setNote(denied ? 'Microphone access was denied, so device names stay hidden.' : 'Could not open the microphone.');
+      setNote(
+        denied
+          ? 'Access was blocked. Allow the microphone for this site in the browser address bar, then try again.'
+          : 'Could not reach your audio devices.',
+      );
     } finally {
-      setRevealing(false);
+      setRequesting(false);
     }
   };
 
@@ -88,6 +92,14 @@ export function AudioHardwareDialog({ onClose }: { onClose: () => void }) {
         Playback, including the program monitor and source preview, uses the output device. Voice over records from the
         input device.
       </p>
+      {lists?.namesHidden ? (
+        <div className="mb-3 flex items-center justify-between gap-3 rounded-sm border border-line bg-surface-2 p-2">
+          <p className="text-xs">Allow access to your audio devices to choose an input and an output.</p>
+          <Button size="sm" variant="primary" disabled={requesting} onClick={() => void onAllow()}>
+            {requesting ? 'Waiting…' : 'Allow'}
+          </Button>
+        </div>
+      ) : null}
       <div className="flex flex-col gap-3">
         <label className="flex flex-col gap-1">
           <span className="text-fg-subtle">Output device</span>
@@ -119,20 +131,13 @@ export function AudioHardwareDialog({ onClose }: { onClose: () => void }) {
       </div>
       {lists?.unavailable ? <p className="mt-3 text-xs">This browser cannot list audio devices.</p> : null}
       {!outputSupported ? <p className="mt-3 text-xs">This browser always plays through the system default output.</p> : null}
-      {lists?.namesHidden ? (
-        <div className="mt-3 flex items-center justify-between gap-3">
-          <p className="text-xs">Allow the microphone to show device names.</p>
-          <Button size="sm" disabled={revealing} onClick={() => void onReveal()}>
-            {revealing ? 'Waiting…' : 'Show names'}
-          </Button>
-        </div>
-      ) : (
+      {lists && !lists.namesHidden && !lists.unavailable ? (
         <div className="mt-3">
           <Button size="sm" onClick={() => void refresh()}>
             Refresh devices
           </Button>
         </div>
-      )}
+      ) : null}
       {note ? <p className="mt-3 text-xs text-danger">{note}</p> : null}
     </Dialog>
   );

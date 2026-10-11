@@ -1,13 +1,23 @@
-import { computeRulerLayout, formatDisplayTime, type FrameRate, pixelToFrame } from '@timeline/core';
+import {
+  computeRulerLayout,
+  formatDisplayTime,
+  type FrameRange,
+  type FrameRate,
+  pixelToFrame,
+} from '@timeline/core';
 import { type PointerEvent, type RefObject, useEffect, useRef } from 'react';
 import { useRuntime } from '../../runtime/context';
 import { RULER_HEIGHT, TRACK_HEADER_WIDTH } from './layout';
+
+const COVERAGE_HEIGHT = 3;
 
 interface TimelineRulerProps {
   scrollerRef: RefObject<HTMLDivElement | null>;
   pixelsPerFrame: number;
   frameRate: FrameRate;
   width: number;
+  /** Sequence ranges with video, drawn as a bar along the bottom edge. */
+  videoCoverage: readonly FrameRange[];
 }
 
 function cssVar(name: string, fallback: string): string {
@@ -18,7 +28,7 @@ function cssVar(name: string, fallback: string): string {
  * Canvas time ruler. Draws only the visible range and redraws on scroll,
  * zoom and playhead changes at most once per animation frame.
  */
-export function TimelineRuler({ scrollerRef, pixelsPerFrame, frameRate, width }: TimelineRulerProps) {
+export function TimelineRuler({ scrollerRef, pixelsPerFrame, frameRate, width, videoCoverage }: TimelineRulerProps) {
   const runtime = useRuntime();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const scrubbing = useRef(false);
@@ -34,6 +44,7 @@ export function TimelineRuler({ scrollerRef, pixelsPerFrame, frameRate, width }:
       tick: cssVar('--color-line-strong', '#3a3a42'),
       label: cssVar('--color-fg-subtle', '#6f6f7a'),
       playhead: cssVar('--color-playhead', '#4c9bff'),
+      coverage: cssVar('--color-video-coverage', '#e8d23a'),
       font: cssVar('--font-mono', 'monospace'),
     };
 
@@ -76,6 +87,13 @@ export function TimelineRuler({ scrollerRef, pixelsPerFrame, frameRate, width }:
       context.fillStyle = colors.tick;
       context.fillRect(0, RULER_HEIGHT - 1, width, 1);
 
+      context.fillStyle = colors.coverage;
+      for (const range of videoCoverage) {
+        const left = Math.max(0, range.start * pixelsPerFrame - scrollLeft);
+        const right = Math.min(width, range.end * pixelsPerFrame - scrollLeft);
+        if (right > left) context.fillRect(left, RULER_HEIGHT - 1 - COVERAGE_HEIGHT, right - left, COVERAGE_HEIGHT);
+      }
+
       const playheadX = runtime.stores.playback.getState().playhead * pixelsPerFrame - scrollLeft;
       if (playheadX >= -8 && playheadX <= width + 8) {
         context.fillStyle = colors.playhead;
@@ -107,7 +125,7 @@ export function TimelineRuler({ scrollerRef, pixelsPerFrame, frameRate, width }:
       unsubscribeUi();
       if (raf !== null) cancelAnimationFrame(raf);
     };
-  }, [runtime, scrollerRef, pixelsPerFrame, frameRate, width]);
+  }, [runtime, scrollerRef, pixelsPerFrame, frameRate, width, videoCoverage]);
 
   const frameAt = (event: PointerEvent<HTMLCanvasElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();

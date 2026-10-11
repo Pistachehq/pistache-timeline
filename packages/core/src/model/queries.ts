@@ -2,6 +2,7 @@ import { MAX_STILL_IMAGE_TIMELINE_SECONDS } from './defaults';
 import { sourceFramesForTimeline, timelineFrameCount } from './speed';
 import { isCrossDissolveTransition } from './transition-resolve';
 import { mediaTimeToFrames, secondsToFrames } from '../time/rational';
+import { type FrameRange } from '../timeline/placement';
 import {
   type AudioTrack,
   type Clip,
@@ -118,6 +119,28 @@ export function getSequenceDuration(sequence: Sequence): number {
     end = Math.max(end, getClipEnd(clip));
   }
   return end;
+}
+
+/** Frame ranges covered by at least one clip on a video track, sorted and merged. */
+export function getVideoCoverage(sequence: Sequence): FrameRange[] {
+  const ranges: FrameRange[] = [];
+  for (const track of sequence.videoTracks) {
+    for (const clip of getTrackClips(sequence, track)) {
+      const end = getClipEnd(clip);
+      if (end > clip.start) ranges.push({ start: clip.start, end });
+    }
+  }
+  ranges.sort((a, b) => a.start - b.start);
+  const merged: FrameRange[] = [];
+  for (const range of ranges) {
+    const last = merged[merged.length - 1];
+    if (last && range.start <= last.end) {
+      merged[merged.length - 1] = { start: last.start, end: Math.max(last.end, range.end) };
+    } else {
+      merged.push(range);
+    }
+  }
+  return merged;
 }
 
 /** Number of whole sequence frames available in an asset. */
