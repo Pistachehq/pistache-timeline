@@ -35,7 +35,7 @@ export function Dialog({ open, title, onClose, children, footer, className }: Di
       }}
       onKeyDown={(event) => event.stopPropagation()}
       className={cn(
-        'm-auto w-[420px] max-w-[calc(100vw-32px)] rounded-md border border-line-strong bg-surface-2 p-0 text-fg shadow-popover',
+        'm-auto w-[420px] max-w-[calc(100vw-32px)] overflow-x-hidden rounded-md border border-line-strong bg-surface-2 p-0 text-fg shadow-popover',
         className,
       )}
     >
@@ -47,7 +47,7 @@ export function Dialog({ open, title, onClose, children, footer, className }: Di
             </h2>
             <IconButton label="Close" icon={<X />} onClick={onClose} />
           </header>
-          <div className="px-4 py-3 text-sm text-fg-muted">{children}</div>
+          <div className="min-w-0 px-4 py-3 text-sm text-fg-muted">{children}</div>
           {footer ? (
             <footer className="flex justify-end gap-2 border-t border-line px-3 py-2">{footer}</footer>
           ) : null}
