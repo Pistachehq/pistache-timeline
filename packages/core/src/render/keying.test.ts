@@ -12,6 +12,7 @@ import {
   rgbToHex,
   ScreenTracker,
   suppressSpill,
+  TRACKER_HOLD_FRAMES,
   type Quad,
 } from './keying';
 
@@ -137,5 +138,22 @@ describe('ScreenTracker', () => {
     const jumped = tracker.update(40, b)!;
     expect(jumped[0][0]).toBeCloseTo(0.01, 6);
     expect(tracker.update(41, null)).toBe(jumped);
+  });
+
+  it('holds the screen through redraws and short gaps, then lets go', () => {
+    const tracker = new ScreenTracker();
+    const quad: Quad = [
+      [0.2, 0.2],
+      [0.6, 0.2],
+      [0.6, 0.8],
+      [0.2, 0.8],
+    ];
+    tracker.update(10, quad);
+    const [cx, cy] = tracker.center()!;
+    expect(cx).toBeCloseTo(0.4, 9);
+    expect(cy).toBeCloseTo(0.5, 9);
+    for (let redraw = 0; redraw < 50; redraw++) expect(tracker.update(11, null)).not.toBeNull();
+    for (let f = 12; f <= 10 + TRACKER_HOLD_FRAMES; f++) expect(tracker.update(f, null)).not.toBeNull();
+    expect(tracker.update(11 + TRACKER_HOLD_FRAMES, null)).toBeNull();
   });
 });

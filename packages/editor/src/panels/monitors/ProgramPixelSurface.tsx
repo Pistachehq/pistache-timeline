@@ -16,7 +16,7 @@ import {
   type PixelReplacement,
 } from '@timeline/media';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, type PointerEvent as ReactPointerEvent } from 'react';
-import { useMediaState, useProjectState } from '../../runtime/context';
+import { useMediaState, useProjectState, useRuntime } from '../../runtime/context';
 
 let sharedRenderer: PixelEffectsRenderer | null = null;
 
@@ -25,7 +25,11 @@ function renderer(): PixelEffectsRenderer {
   return sharedRenderer;
 }
 
-const REPLACEMENT_DRIFT = 0.3;
+/** Replacement video sync, in seconds: nudge the rate for small drift, seek only for large drift. */
+const PAUSED_DRIFT = 0.02;
+const RATE_DRIFT = 0.04;
+const SEEK_DRIFT = 0.5;
+const MAX_RATE_NUDGE = 0.08;
 
 interface ReplacementSource {
   readonly assetId: string;
@@ -76,6 +80,9 @@ export function ProgramPixelSurface({
   readonly picking: boolean;
   readonly onPick: (u: number, v: number) => void;
 }) {
+  // The `playhead` prop only changes when the picture layers change during playback,
+  // so per-frame work reads the playback clock directly.
+  const playbackStore = useRuntime().stores.playback;
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const sourceNode = useRef<HTMLVideoElement | HTMLImageElement | null>(null);
   const replacementNodes = useRef(new Map<string, HTMLVideoElement | HTMLImageElement>());
@@ -143,7 +150,7 @@ export function ProgramPixelSurface({
       outputHeight: h,
       effects: state.clip.effects.video,
       replacements: pictures,
-      frame: state.playhead,
+      frame: playbackStore.getState().playhead,
       tracking: tracking.current,
     });
     if (canvas.width !== w || canvas.height !== h) {
@@ -186,38 +193,57 @@ export function ProgramPixelSurface({
         ctx.filter = 'none';
       }
     }
-  }, []);
+  }, [playbackStore]);
 
   const syncReplacements = useCallback(() => {
     const state = live.current;
-    const fps = state.sequence.frameRate;
-    const local = framesToSeconds(state.playhead - state.clip.start, fps);
+    const { playhead, playing } = playbackStore.getState();
+    const local = framesToSeconds(playhead - state.clip.start, state.sequence.frameRate);
     for (const item of replacementsRef.current) {
       const el = replacementNodes.current.get(item.assetId);
       if (!(el instanceof HTMLVideoElement) || el.readyState < 1) continue;
-      const target = replacementTimeSeconds(local, el.duration || item.durationSeconds);
-      if (state.playing) {
-        if (el.paused) void el.play().catch(() => undefined);
-        if (Math.abs(el.currentTime - target) > REPLACEMENT_DRIFT) el.currentTime = target;
-      } else {
+      const duration = Number.isFinite(el.duration) && el.duration > 0 ? el.duration : item.durationSeconds;
+      const target = replacementTimeSeconds(local, duration);
+      let drift = el.currentTime - target;
+      if (duration > 0) {
+        if (drift > duration / 2) drift -= duration;
+        else if (drift < -duration / 2) drift += duration;
+      }
+      if (!playing) {
         if (!el.paused) el.pause();
-        if (Math.abs(el.currentTime - target) > 0.03) el.currentTime = target;
+        el.playbackRate = 1;
+        if (!el.seeking && Math.abs(drift) > PAUSED_DRIFT) el.currentTime = target;
+        continue;
+      }
+      if (el.paused) {
+        if (Math.abs(drift) > PAUSED_DRIFT) el.currentTime = target;
+        void el.play().catch(() => undefined);
+        continue;
+      }
+      if (el.seeking) continue;
+      if (Math.abs(drift) > SEEK_DRIFT) {
+        el.playbackRate = 1;
+        el.currentTime = target;
+      } else if (Math.abs(drift) > RATE_DRIFT) {
+        el.playbackRate = Math.min(1 + MAX_RATE_NUDGE, Math.max(1 - MAX_RATE_NUDGE, 1 - drift));
+      } else if (el.playbackRate !== 1) {
+        el.playbackRate = 1;
       }
     }
-  }, []);
+  }, [playbackStore]);
 
   useEffect(() => {
     let raf = 0;
     const tick = () => {
       raf = requestAnimationFrame(tick);
       syncReplacements();
-      if (!live.current.playing && !dirty.current) return;
+      if (!playbackStore.getState().playing && !dirty.current) return;
       dirty.current = false;
       draw();
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [draw, syncReplacements]);
+  }, [draw, syncReplacements, playbackStore]);
 
   useLayoutEffect(() => {
     dirty.current = true;

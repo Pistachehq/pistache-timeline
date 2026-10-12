@@ -358,6 +358,8 @@ export function findKeyRegion(
   height: number,
   key: KeyUniforms,
   seed: Point | null = null,
+  /** Screen found in the previous frame: every key area inside it joins the region (a finger can split it). */
+  previous: Quad | null = null,
 ): KeyRegion | null {
   const total = width * height;
   if (total === 0) return null;
@@ -369,18 +371,23 @@ export function findKeyRegion(
   }
   const labels = new Int32Array(total).fill(-1);
   const sizes: number[] = [];
+  const centers: Point[] = [];
   const queue = new Int32Array(total);
   for (let start = 0; start < total; start++) {
     if (!mask[start] || labels[start]! >= 0) continue;
     const label = sizes.length;
     let head = 0;
     let tail = 0;
+    let sumX = 0;
+    let sumY = 0;
     queue[tail++] = start;
     labels[start] = label;
     while (head < tail) {
       const i = queue[head++]!;
       const x = i % width;
       const y = (i - x) / width;
+      sumX += x + 0.5;
+      sumY += y + 0.5;
       const visit = (j: number) => {
         if (mask[j] && labels[j]! < 0) {
           labels[j] = label;
@@ -393,12 +400,28 @@ export function findKeyRegion(
       if (y < height - 1) visit(i + width);
     }
     sizes.push(tail);
+    centers.push([sumX / tail / width, sumY / tail / height]);
   }
   if (sizes.length === 0) return null;
 
   const minimum = Math.max(6, total * 0.002);
   let chosen = -1;
-  if (seed) {
+  const members = new Set<number>();
+  if (previous) {
+    const area = grownQuad(previous, PREVIOUS_SCREEN_MARGIN);
+    let biggest = 0;
+    sizes.forEach((size, label) => {
+      if (size < minimum || !insideConvexQuad(area, centers[label]!)) return;
+      members.add(label);
+      if (size > biggest) {
+        biggest = size;
+        chosen = label;
+      }
+    });
+  }
+  if (chosen >= 0) {
+    // Tracked from the previous frame.
+  } else if (seed) {
     const sx = Math.round(Math.min(width - 1, Math.max(0, seed[0] * width - 0.5)));
     const sy = Math.round(Math.min(height - 1, Math.max(0, seed[1] * height - 0.5)));
     const under = labels[sy * width + sx]!;
@@ -427,6 +450,17 @@ export function findKeyRegion(
     });
   }
   if (chosen < 0 || sizes[chosen]! < minimum) return null;
+  members.add(chosen);
+  const member = new Uint8Array(sizes.length);
+  let covered = 0;
+  for (const label of members) {
+    member[label] = 1;
+    covered += sizes[label]!;
+  }
+  const inRegion = (i: number) => {
+    const label = labels[i]!;
+    return label >= 0 && member[label] === 1;
+  };
 
   const edge: Point[] = [];
   let minX = width;
@@ -434,7 +468,7 @@ export function findKeyRegion(
   let maxX = 0;
   let maxY = 0;
   for (let i = 0; i < total; i++) {
-    if (labels[i] !== chosen) continue;
+    if (!inRegion(i)) continue;
     const x = i % width;
     const y = (i - x) / width;
     minX = Math.min(minX, x);
@@ -443,7 +477,7 @@ export function findKeyRegion(
     maxY = Math.max(maxY, y + 1);
     const inside =
       x > 0 && x < width - 1 && y > 0 && y < height - 1 &&
-      labels[i - 1] === chosen && labels[i + 1] === chosen && labels[i - width] === chosen && labels[i + width] === chosen;
+      inRegion(i - 1) && inRegion(i + 1) && inRegion(i - width) && inRegion(i + width);
     if (inside) continue;
     edge.push([x, y], [x + 1, y], [x + 1, y + 1], [x, y + 1]);
   }
@@ -462,7 +496,30 @@ export function findKeyRegion(
         [box[0] + box[2], box[1] + box[3]],
         [box[0], box[1] + box[3]],
       ];
-  return { quad: expandQuad(normalized, 1 / Math.max(width, height)), box, coverage: sizes[chosen]! / total };
+  return { quad: expandQuad(normalized, 1 / Math.max(width, height)), box, coverage: covered / total };
+}
+
+/** How far around the previous screen a key area may be and still count as part of it. */
+const PREVIOUS_SCREEN_MARGIN = 0.15;
+
+function grownQuad(quad: Quad, margin: number): Quad {
+  const cx = (quad[0][0] + quad[1][0] + quad[2][0] + quad[3][0]) / 4;
+  const cy = (quad[0][1] + quad[1][1] + quad[2][1] + quad[3][1]) / 4;
+  return quad.map((p) => [cx + (p[0] - cx) * (1 + margin), cy + (p[1] - cy) * (1 + margin)]) as unknown as Quad;
+}
+
+function insideConvexQuad(quad: Quad, p: Point): boolean {
+  let sign = 0;
+  for (let i = 0; i < 4; i++) {
+    const a = quad[i]!;
+    const b = quad[(i + 1) % 4]!;
+    const cross = (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]);
+    if (Math.abs(cross) < 1e-12) continue;
+    const s = Math.sign(cross);
+    if (sign === 0) sign = s;
+    else if (s !== sign) return false;
+  }
+  return true;
 }
 
 function solve8(a: number[][], b: number[]): number[] | null {
@@ -554,17 +611,36 @@ export function coverBoxMapping(
 }
 
 /** Keeps a tracked quad steady between neighbouring frames and holds it through brief misses. */
+export const TRACKER_HOLD_FRAMES = 12;
+
 export class ScreenTracker {
   #quad: Quad | null = null;
   #frame = Number.NaN;
   #missed = 0;
 
+  /** The tracked screen, used to find the same screen in the next frame. */
+  current(): Quad | null {
+    return this.#quad;
+  }
+
+  center(): Point | null {
+    const quad = this.#quad;
+    if (!quad) return null;
+    return [(quad[0][0] + quad[1][0] + quad[2][0] + quad[3][0]) / 4, (quad[0][1] + quad[1][1] + quad[2][1] + quad[3][1]) / 4];
+  }
+
+  /**
+   * `frame` is the sequence frame. Redraws of the same frame do not count as
+   * misses, so a screen briefly hidden (a finger, motion blur) is held for
+   * up to {@link TRACKER_HOLD_FRAMES} frames.
+   */
   update(frame: number, next: Quad | null): Quad | null {
-    const adjacent = Math.abs(frame - this.#frame) <= 2;
+    const sameFrame = frame === this.#frame;
+    const adjacent = sameFrame || Math.abs(frame - this.#frame) <= 3;
     this.#frame = frame;
     if (!next) {
-      this.#missed += 1;
-      if (!adjacent || this.#missed > 8) this.#quad = null;
+      if (!sameFrame) this.#missed += 1;
+      if (!adjacent || this.#missed > TRACKER_HOLD_FRAMES) this.#quad = null;
       return this.#quad;
     }
     this.#missed = 0;

@@ -8,6 +8,7 @@ import {
   ScreenTracker,
   type Mat3,
   type Point,
+  type Quad,
   type VideoEffect,
 } from '@timeline/core';
 
@@ -36,25 +37,46 @@ export interface PixelFrameInput {
 
 /** Per-clip memory for Screen Replace: one tracker per effect slot. */
 export class PixelTracking {
-  readonly #trackers = new Map<number, ScreenTracker>();
+  readonly #trackers = new Map<number, { tracker: ScreenTracker; target: string }>();
 
-  tracker(slot: number): ScreenTracker {
-    let tracker = this.#trackers.get(slot);
-    if (!tracker) {
-      tracker = new ScreenTracker();
-      this.#trackers.set(slot, tracker);
+  /** `target` identifies what is tracked (picked point, fit); a new target starts over. */
+  tracker(slot: number, target = ''): ScreenTracker {
+    let entry = this.#trackers.get(slot);
+    if (!entry) {
+      entry = { tracker: new ScreenTracker(), target };
+      this.#trackers.set(slot, entry);
+    } else if (entry.target !== target) {
+      entry.target = target;
+      entry.tracker.reset();
     }
-    return tracker;
+    return entry.tracker;
   }
 
   reset(): void {
-    for (const tracker of this.#trackers.values()) tracker.reset();
+    for (const entry of this.#trackers.values()) entry.tracker.reset();
   }
+}
+
+function boxQuad([x, y, w, h]: readonly [number, number, number, number]): Quad {
+  return [
+    [x, y],
+    [x + w, y],
+    [x + w, y + h],
+    [x, y + h],
+  ];
+}
+
+function quadBox(quad: Quad): [number, number, number, number] {
+  const xs = quad.map((p) => p[0]);
+  const ys = quad.map((p) => p[1]);
+  const x = Math.min(...xs);
+  const y = Math.min(...ys);
+  return [x, y, Math.max(...xs) - x, Math.max(...ys) - y];
 }
 
 const MAX_KEYS = 4;
 const MAX_REPLACEMENTS = 2;
-const ANALYSIS_WIDTH = 160;
+const ANALYSIS_WIDTH = 320;
 /** Choke and sharpen radii are in pixels of a 1080-line picture, so preview and export match. */
 const REFERENCE_LINES = 1080;
 
@@ -278,12 +300,18 @@ export class PixelEffectsRenderer {
   #programs: Programs | null = null;
   #failed = false;
   #analysis: CanvasRenderingContext2D | null = null;
+  /** What each replacement texture holds, so a source without a frame (seeking) reuses it. */
+  readonly #slotPictures: ({ readonly assetId: string; readonly width: number; readonly height: number } | null)[] = [
+    null,
+    null,
+  ];
 
   constructor() {
     this.canvas = document.createElement('canvas');
     this.canvas.addEventListener('webglcontextlost', (event) => {
       event.preventDefault();
       this.#programs = null;
+      this.#slotPictures.fill(null);
     });
     this.canvas.addEventListener('webglcontextrestored', () => {
       this.#failed = false;
@@ -448,23 +476,34 @@ export class PixelEffectsRenderer {
       }
       const slot = slots++;
       keyB.set([key.spill, key.chokePx, 1, slot], i * 4);
-      const replacement = effect.sourceAssetId ? input.replacements.get(effect.sourceAssetId) : undefined;
-      if (!replacement || replacement.width <= 0 || replacement.height <= 0) {
+      const fresh = effect.sourceAssetId ? input.replacements.get(effect.sourceAssetId) : undefined;
+      const usable = fresh && fresh.width > 0 && fresh.height > 0 ? fresh : undefined;
+      const held = this.#slotPictures[slot];
+      // While a replacement video seeks it has no frame; keep showing its last one.
+      const size = usable ?? (held && held.assetId === effect.sourceAssetId ? held : undefined);
+      if (!effect.sourceAssetId || !size) {
         replState[slot] = effect.sourceAssetId ? 2 : 0;
         return;
       }
-      const replAspect = replacement.width / replacement.height;
+      const replAspect = size.width / size.height;
       let mapping: Mat3 | null = null;
       if (effect.fit === 'frame') {
         mapping = coverBoxMapping([0, 0, 1, 1], aspect, replAspect);
       } else {
         if (analysis === undefined) analysis = this.#analyse(input.source, sourceWidth, sourceHeight);
-        const seed: Point | null = effect.seedX !== null && effect.seedY !== null ? [effect.seedX, effect.seedY] : null;
-        const region = analysis ? findKeyRegion(analysis.data, analysis.w, analysis.h, key, seed) : null;
+        const tracker = input.tracking.tracker(index, `${effect.fit}:${effect.seedX}:${effect.seedY}`);
+        const picked: Point | null = effect.seedX !== null && effect.seedY !== null ? [effect.seedX, effect.seedY] : null;
+        // Follow the screen found in the previous frame, so a moving phone keeps its screen
+        // and a finger splitting the green area does not make the target jump.
+        const seed = tracker.center() ?? picked;
+        const region = analysis
+          ? findKeyRegion(analysis.data, analysis.w, analysis.h, key, seed, tracker.current())
+          : null;
         if (effect.fit === 'box') {
-          if (region) mapping = coverBoxMapping(region.box, aspect, replAspect);
+          const box = tracker.update(input.frame, region ? boxQuad(region.box) : null);
+          if (box) mapping = coverBoxMapping(quadBox(box), aspect, replAspect);
         } else {
-          const quad = input.tracking.tracker(index).update(input.frame, region?.quad ?? null);
+          const quad = tracker.update(input.frame, region?.quad ?? null);
           const forward = quad ? homographyFromUnitSquare(quad) : null;
           mapping = forward ? invertMat3(forward) : null;
         }
@@ -477,10 +516,12 @@ export class PixelEffectsRenderer {
       replH.set(columnMajor(mapping), slot * 9);
       gl.activeTexture(slot === 0 ? gl.TEXTURE1 : gl.TEXTURE2);
       gl.bindTexture(gl.TEXTURE_2D, programs.repl[slot]!);
+      if (!usable) return;
       try {
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, replacement.source);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, usable.source);
+        this.#slotPictures[slot] = { assetId: effect.sourceAssetId, width: usable.width, height: usable.height };
       } catch {
-        replState[slot] = 2;
+        replState[slot] = held && held.assetId === effect.sourceAssetId ? 1 : 2;
       }
     });
     gl.uniform1i(u.uRepl0!, 1);
