@@ -97,6 +97,7 @@ export type ProjectBinTab = 'media' | 'effects';
 
 export type DialogState =
   | { readonly kind: 'export' }
+  | { readonly kind: 'sequence-settings' }
   | { readonly kind: 'about' }
   | { readonly kind: 'audio-hardware' }
   | { readonly kind: 'confirm'; readonly request: ConfirmRequest }

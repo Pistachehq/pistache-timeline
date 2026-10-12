@@ -21,6 +21,7 @@ export type CommandId =
   | 'clip.nudgeLeft'
   | 'clip.nudgeRight'
   | 'clip.toggleEnabled'
+  | 'sequence.settings'
   | 'sequence.addVideoTrack'
   | 'sequence.addAudioTrack'
   | 'tool.select'
@@ -126,6 +127,11 @@ export const COMMANDS: readonly Command[] = [
     label: 'Enable / Disable Clip',
     run: (rt) => rt.actions.edit.toggleSelectedClipsEnabled(),
     isEnabled: hasSelection,
+  },
+  {
+    id: 'sequence.settings',
+    label: 'Sequence Settings…',
+    run: (rt) => rt.stores.ui.getState().openDialog({ kind: 'sequence-settings' }),
   },
   { id: 'sequence.addVideoTrack', label: 'Add Video Track', run: (rt) => rt.actions.edit.addTrack('video') },
   { id: 'sequence.addAudioTrack', label: 'Add Audio Track', run: (rt) => rt.actions.edit.addTrack('audio') },

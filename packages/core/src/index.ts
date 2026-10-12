@@ -11,6 +11,7 @@ export * from './operations/speech';
 export * from './model/caption-styles';
 export * from './model/factory';
 export * from './model/queries';
+export * from './model/sequence-frame';
 export * from './model/invariants';
 
 export * from './operations/common';
@@ -18,6 +19,7 @@ export * from './operations/clips';
 export * from './operations/clip-effects';
 export * from './operations/clip-transitions-edit';
 export * from './operations/tracks';
+export * from './operations/sequence-settings';
 export * from './operations/captions';
 export * from './model/effects';
 export * from './model/speed';

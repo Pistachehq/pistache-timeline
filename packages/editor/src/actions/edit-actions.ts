@@ -19,6 +19,8 @@ import {
   getActiveSequence,
   getAssetFrameCount,
   getSequence,
+  resolutionForEmptySequence,
+  setSequenceResolution,
   getSplittableClipsAt,
   isRangeFree,
   pairedAudioTrack,
@@ -209,6 +211,15 @@ export function createEditActions(services: EditorServices, media: MediaActions)
     );
   };
 
+  let pendingFrameMatch: { width: number; height: number } | null = null;
+
+  const noteFrameMatch = () => {
+    const match = pendingFrameMatch;
+    pendingFrameMatch = null;
+    if (!match) return;
+    ui.getState().notify(`Sequence frame set to ${match.width}×${match.height} to match the media.`, 'info');
+  };
+
   const placeClipOnProject = (
     project: Project,
     sequence: Sequence,
@@ -217,21 +228,37 @@ export function createEditActions(services: EditorServices, media: MediaActions)
     start: number,
     clipId: ClipId,
   ): EditResult => {
-    const track = findTrack(sequence, trackId);
     const asset = project.mediaAssets[assetId];
-    let result = addClip(project, { sequenceId: sequence.id, trackId, assetId, start, clipId });
+    const fitted = resolutionForEmptySequence(sequence, asset?.resolution ?? null);
+    let working = project;
+    let active = sequence;
+    pendingFrameMatch = null;
+    if (fitted) {
+      const resized = setSequenceResolution(project, {
+        sequenceId: sequence.id,
+        width: fitted.width,
+        height: fitted.height,
+      });
+      if (resized.ok) {
+        working = resized.value;
+        active = getSequence(working, sequence.id) ?? sequence;
+        pendingFrameMatch = fitted;
+      }
+    }
+    const track = findTrack(active, trackId);
+    let result = addClip(working, { sequenceId: active.id, trackId, assetId, start, clipId });
     if (!result.ok || !track || track.kind !== 'video' || !asset?.hasAudio) return result;
 
     const audioTrack = pairedAudioTrack(sequence, track.id);
     if (!audioTrack || audioTrack.locked) return result;
 
-    const seq = getSequence(result.value, sequence.id);
+    const seq = getSequence(result.value, active.id);
     const videoClip = seq?.clips[clipId];
     if (!seq || !videoClip) return result;
 
     const audioClipId = newClipId();
     result = addClip(result.value, {
-      sequenceId: sequence.id,
+      sequenceId: active.id,
       trackId: audioTrack.id,
       assetId,
       start,
@@ -241,7 +268,7 @@ export function createEditActions(services: EditorServices, media: MediaActions)
     });
     if (!result.ok) return result;
 
-    return updateSequence(result.value, sequence.id, (next) =>
+    return updateSequence(result.value, active.id, (next) =>
       ok({
         ...next,
         clips: {
@@ -258,7 +285,11 @@ export function createEditActions(services: EditorServices, media: MediaActions)
     const placed = run(label, (project, sequence) =>
       placeClipOnProject(project, sequence, assetId, trackId, start, clipId),
     );
-    if (!placed) return null;
+    if (!placed) {
+      pendingFrameMatch = null;
+      return null;
+    }
+    noteFrameMatch();
     selection.getState().selectClips([clipId]);
     return clipId;
   };
@@ -331,7 +362,11 @@ export function createEditActions(services: EditorServices, media: MediaActions)
         const track = (kind === 'video' ? seq.videoTracks.at(-1) : seq.audioTracks.at(-1))!;
         return placeClipOnProject(p, seq, assetId, track.id, at, clipId);
       });
-      if (!placed) return null;
+      if (!placed) {
+        pendingFrameMatch = null;
+        return null;
+      }
+      noteFrameMatch();
       selection.getState().selectClips([clipId]);
       return clipId;
     },
@@ -753,6 +788,12 @@ export function createEditActions(services: EditorServices, media: MediaActions)
 
     updateTrack(trackId: TrackId, changes: TrackChanges, label: string): boolean {
       return run(label, (project, sequence) => updateTrack(project, { sequenceId: sequence.id, trackId, changes }));
+    },
+
+    setSequenceFrame(width: number, height: number): boolean {
+      return run('Sequence Settings', (project, sequence) =>
+        setSequenceResolution(project, { sequenceId: sequence.id, width, height }),
+      );
     },
 
     addTrack(kind: TrackKind): boolean {

@@ -28,6 +28,8 @@ const MENU_LAYOUT: MenuLayout = [
     id: 'sequence',
     label: 'Sequence',
     items: [
+      'sequence.settings',
+      '-',
       'clip.insertSelectedAsset',
       'clip.split',
       'clip.toggleEnabled',
