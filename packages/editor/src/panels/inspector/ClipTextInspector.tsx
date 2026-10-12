@@ -376,14 +376,17 @@ export function ClipTextInspector({ clip, locked }: { readonly clip: Clip; reado
           />
         </label>
       ) : null}
-      <Select
-        label="Text transition"
-        disabled={locked}
-        className="w-full"
-        value={text.animation}
-        options={TEXT_ANIMATION_IDS.map((id) => ({ value: id, label: TEXT_ANIMATION_LABELS[id] }))}
-        onValueChange={(animation) => patch({ animation }, 'Change Text Transition')}
-      />
+      <div className="grid grid-cols-[4.75rem_minmax(0,1fr)] items-center gap-x-2">
+        <span className="truncate text-xs text-fg-muted">Entrance</span>
+        <Select
+          label="Text transition in"
+          disabled={locked}
+          className="w-full min-w-0"
+          value={text.animation}
+          options={TEXT_ANIMATION_IDS.map((id) => ({ value: id, label: TEXT_ANIMATION_LABELS[id] }))}
+          onValueChange={(animation) => patch({ animation }, 'Change Text Transition')}
+        />
+      </div>
       {text.animation !== 'none' && sequence ? (
         <div className="grid grid-cols-[4.75rem_minmax(0,1fr)] items-center gap-x-2">
           <TimelineDurationField
@@ -393,6 +396,29 @@ export function ClipTextInspector({ clip, locked }: { readonly clip: Clip; reado
             maxFrames={Math.max(1, maxTransitionFramesForClip(getClipDuration(clip)))}
             disabled={locked}
             onChange={(animationFrames) => patch({ animationFrames }, 'Change Text Transition')}
+          />
+        </div>
+      ) : null}
+      <div className="grid grid-cols-[4.75rem_minmax(0,1fr)] items-center gap-x-2">
+        <span className="truncate text-xs text-fg-muted">Exit</span>
+        <Select
+          label="Text transition out"
+          disabled={locked}
+          className="w-full min-w-0"
+          value={text.outAnimation}
+          options={TEXT_ANIMATION_IDS.map((id) => ({ value: id, label: TEXT_ANIMATION_LABELS[id] }))}
+          onValueChange={(outAnimation) => patch({ outAnimation }, 'Change Text Transition')}
+        />
+      </div>
+      {text.outAnimation !== 'none' && sequence ? (
+        <div className="grid grid-cols-[4.75rem_minmax(0,1fr)] items-center gap-x-2">
+          <TimelineDurationField
+            label="Duration"
+            frames={text.outAnimationFrames}
+            frameRate={sequence.frameRate}
+            maxFrames={Math.max(1, maxTransitionFramesForClip(getClipDuration(clip)))}
+            disabled={locked}
+            onChange={(outAnimationFrames) => patch({ outAnimationFrames }, 'Change Text Transition')}
           />
         </div>
       ) : null}

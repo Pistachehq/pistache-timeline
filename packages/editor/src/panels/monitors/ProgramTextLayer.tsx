@@ -1,4 +1,4 @@
-import { textAnimationFrame, textAnimationProgress, type Clip, type Sequence } from '@timeline/core';
+import { getClipDuration, textClipAnimationFrame, type Clip, type Sequence } from '@timeline/core';
 import { cn } from '@timeline/ui';
 import { useEffect, useRef } from 'react';
 import { usePlaybackState, useRuntime, useUiState } from '../../runtime/context';
@@ -79,11 +79,7 @@ export function ProgramTextLayer({
 
   if (!text) return null;
 
-  const progress =
-    text.animation === 'none'
-      ? 1
-      : textAnimationProgress(playhead - clip.start, text.animationFrames || 60);
-  const frame = textAnimationFrame(text.content, text.animation, progress);
+  const frame = textClipAnimationFrame(text, playhead - clip.start, getClipDuration(clip));
   const fit = frameWidth > 0 ? frameWidth / sequence.resolution.width : 1;
   const box = programClipWrapperStyle(clip, sequence, playhead, frameWidth, frameHeight, 0, 0);
   const decoration = [text.underline ? 'underline' : '', text.strike ? 'line-through' : ''].filter(Boolean).join(' ');

@@ -29,6 +29,7 @@ export * from './model/transition-resolve';
 export * from './render/clip-render';
 export * from './render/library-look';
 export * from './render/transition-paint';
+export * from './render/keying';
 export * from './operations/media';
 export * from './operations/media-bin';
 

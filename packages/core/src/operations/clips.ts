@@ -179,10 +179,13 @@ export function updateClipText(project: Project, input: UpdateClipTextInput): Ed
     if (!clip.text) return clip;
     const maxFrames = Math.max(1, maxTransitionFramesForClip(getClipDuration(clip)));
     const requested = input.text.animationFrames ?? clip.text.animationFrames ?? DEFAULT_CLIP_TEXT.animationFrames;
+    const requestedOut =
+      input.text.outAnimationFrames ?? clip.text.outAnimationFrames ?? DEFAULT_CLIP_TEXT.outAnimationFrames;
     const text: ClipText = {
       ...clip.text,
       ...input.text,
       animationFrames: Math.round(Math.min(maxFrames, Math.max(1, requested))),
+      outAnimationFrames: Math.round(Math.min(maxFrames, Math.max(1, requestedOut))),
     };
     return { ...clip, text, name: textClipName(text.content) };
   });

@@ -38,6 +38,7 @@ function styledText(content: string, fontSize: number, look: CaptionDesignPatch)
     align: 'center',
     animation: 'none',
     animationFrames: 1,
+    outAnimation: 'none',
     italic: false,
     underline: false,
     strike: false,

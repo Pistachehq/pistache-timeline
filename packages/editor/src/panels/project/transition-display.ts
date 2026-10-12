@@ -1,5 +1,6 @@
 import { type ClipEdgeTransition, type VideoTransitionKind } from '@timeline/core';
 import { type SelectOption } from '@timeline/ui';
+import { isDuplicateLibraryTransition } from './premiere-library';
 import premierePaths from './premiere-paths.json';
 import { premiereSlug, videoTransitionLibraryId } from './premiere-slug';
 
@@ -52,7 +53,7 @@ function humanizeLibraryId(libraryId: string): string {
 }
 
 export function listPremiereTransitionOptions(): readonly { readonly libraryId: string; readonly name: string }[] {
-  return premierePaths.videoTransitions.map((relativePath) => ({
+  return premierePaths.videoTransitions.filter((relativePath) => !isDuplicateLibraryTransition(relativePath)).map((relativePath) => ({
     libraryId: videoTransitionLibraryId(relativePath),
     name: LIBRARY_TRANSITION_NAMES.get(videoTransitionLibraryId(relativePath)) ?? relativePath,
   }));

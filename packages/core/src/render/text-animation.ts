@@ -1,4 +1,4 @@
-import { type TextAnimationId } from '../model/text';
+import { type ClipText, type TextAnimationId } from '../model/text';
 
 export interface TextRun {
   readonly text: string;
@@ -174,4 +174,19 @@ export function textAnimationFrame(
 export function textAnimationProgress(localFrame: number, durationFrames: number): number {
   if (durationFrames <= 1) return 1;
   return clamp01(localFrame / (durationFrames - 1));
+}
+
+/**
+ * Text on screen at `localFrame` of a clip lasting `clipFrames`. The entrance
+ * plays from the head; the exit plays the same reveal backwards into the tail.
+ */
+export function textClipAnimationFrame(text: ClipText, localFrame: number, clipFrames: number): TextAnimationFrame {
+  const outFrames = Math.max(1, Math.min(text.outAnimationFrames || 30, clipFrames));
+  const outStart = clipFrames - outFrames;
+  if (text.outAnimation !== 'none' && localFrame >= outStart) {
+    const remaining = clipFrames - 1 - localFrame;
+    return textAnimationFrame(text.content, text.outAnimation, textAnimationProgress(remaining, outFrames));
+  }
+  if (text.animation === 'none') return textAnimationFrame(text.content, 'none', 1);
+  return textAnimationFrame(text.content, text.animation, textAnimationProgress(localFrame, text.animationFrames || 60));
 }

@@ -3,6 +3,7 @@ import {
   frameRateToNumber,
   getSequence,
   getStackedVideoClipsAt,
+  hasPixelVideoEffects,
   sourceMediaFrame,
   type Clip,
   type FrameRate,
@@ -14,7 +15,8 @@ import { ArrayBufferTarget as Mp4Target, Muxer as Mp4Muxer } from 'mp4-muxer';
 import { ArrayBufferTarget as WebmTarget, Muxer as WebmMuxer } from 'webm-muxer';
 import { type ExportOptions, type ExportRequest, type ExportResult } from '../../types';
 import { waitForMediaEvent } from '../media-element';
-import { type CanvasDrawable, drawGapFrame, drawStackedProgramFrame } from './compose-frame';
+import { PixelEffectsRenderer, replacementAssetIds, replacementTimeSeconds } from '../effects/pixel-effects';
+import { type CanvasDrawable, drawGapFrame, drawStackedProgramFrame, type PixelEffectsContext } from './compose-frame';
 import { type BrowserExportContext } from './export-context';
 import { chooseVideoEncoder, type ChosenVideoEncoder } from './export-codecs';
 import { encodeMixedAudioToMuxer, EXPORT_AUDIO_SAMPLE_RATE, mixSequenceAudio } from './export-audio-mix';
@@ -156,16 +158,25 @@ export async function exportSequenceToWebm(
   const videos = new Map<MediaAssetId, HTMLVideoElement>();
   const images = new Map<MediaAssetId, HTMLImageElement>();
   const decoders = new Map<MediaAssetId, SequentialFrameSource>();
+  const replacementDecoders = new Map<MediaAssetId, SequentialFrameSource>();
+  const replacementVideos = new Map<MediaAssetId, HTMLVideoElement>();
+  const replacementCanvases = new Map<MediaAssetId, HTMLCanvasElement>();
+  let pixel: PixelEffectsContext | null = null;
 
   const releaseSources = () => {
-    for (const decoder of decoders.values()) decoder.close();
+    for (const decoder of [...decoders.values(), ...replacementDecoders.values()]) decoder.close();
     decoders.clear();
-    for (const video of videos.values()) {
+    replacementDecoders.clear();
+    for (const video of [...videos.values(), ...replacementVideos.values()]) {
       video.pause();
       video.removeAttribute('src');
       video.load();
     }
     videos.clear();
+    replacementVideos.clear();
+    replacementCanvases.clear();
+    pixel?.renderer.dispose();
+    pixel = null;
   };
 
   try {
@@ -197,6 +208,64 @@ export async function exportSequenceToWebm(
     canvas.height = height;
     const ctx = canvas.getContext('2d');
     if (!ctx) throw new TimelineError('UNKNOWN', 'Could not create an export canvas.');
+
+    const pixelClips = Object.values(sequence.clips).filter((clip) => hasPixelVideoEffects(clip.effects.video));
+    if (pixelClips.length > 0) {
+      const replacementIds = new Set(pixelClips.flatMap((clip) => replacementAssetIds(clip.effects.video)));
+      for (const assetId of replacementIds) {
+        throwIfAborted(signal);
+        const asset = request.project.mediaAssets[assetId as MediaAssetId];
+        if (!asset || asset.kind === 'audio') continue;
+        const handle = await context.resolve(asset.source);
+        if (!handle) continue;
+        if (asset.kind === 'image') {
+          if (!images.has(asset.id)) images.set(asset.id, await loadImage(handle, signal));
+          continue;
+        }
+        let decoder: SequentialFrameSource | null = null;
+        try {
+          decoder = await openSequentialVideo(await blobFromUrl(handle.url, signal));
+        } catch (error) {
+          if (isAbortError(error)) throw error;
+        }
+        if (decoder) replacementDecoders.set(asset.id, decoder);
+        else replacementVideos.set(asset.id, await loadVideo(handle, signal));
+      }
+      pixel = {
+        renderer: new PixelEffectsRenderer(),
+        tracking: new Map(),
+        resolveReplacement: async (assetId, clip, frame) => {
+          const asset = request.project.mediaAssets[assetId as MediaAssetId];
+          if (!asset) return null;
+          if (asset.kind === 'image') {
+            const image = images.get(asset.id);
+            return image ? { source: image, width: image.naturalWidth, height: image.naturalHeight } : null;
+          }
+          const local = framesToSeconds(frame - clip.start, sequence.frameRate);
+          const seconds = replacementTimeSeconds(local, asset.duration.value / Math.max(1, asset.duration.timescale));
+          const decoder = replacementDecoders.get(asset.id);
+          if (decoder) {
+            const sample = await decoder.frameAt(seconds);
+            if (!sample || sample.displayWidth <= 0 || sample.displayHeight <= 0) return null;
+            let surface = replacementCanvases.get(asset.id);
+            if (!surface) {
+              surface = document.createElement('canvas');
+              replacementCanvases.set(asset.id, surface);
+            }
+            surface.width = sample.displayWidth;
+            surface.height = sample.displayHeight;
+            const sctx = surface.getContext('2d');
+            if (!sctx) return null;
+            sample.draw(sctx, 0, 0, surface.width, surface.height);
+            return { source: surface, width: surface.width, height: surface.height };
+          }
+          const video = replacementVideos.get(asset.id);
+          if (!video) return null;
+          await seekVideoForExport(video, seconds, signal);
+          return { source: video, width: video.videoWidth, height: video.videoHeight };
+        },
+      };
+    }
 
     const audioMix = await mixSequenceAudio(sequence, request.project, context, {
       ...options,
@@ -263,7 +332,7 @@ export async function exportSequenceToWebm(
           if (!video) return null;
           await seekVideoForExport(video, seconds, signal);
           return drawableFromVideo(video);
-        });
+        }, pixel);
       } else {
         drawGapFrame(ctx, width, height);
       }

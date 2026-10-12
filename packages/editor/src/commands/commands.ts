@@ -44,6 +44,7 @@ export type CommandId =
   | 'view.zoomFit'
   | 'view.snap'
   | 'settings.audio'
+  | 'help.guide'
   | 'help.about'
   | 'help.repository';
 
@@ -236,6 +237,7 @@ export const COMMANDS: readonly Command[] = [
     run: (rt) => rt.stores.ui.getState().openDialog({ kind: 'audio-hardware' }),
   },
 
+  { id: 'help.guide', label: 'Guide', run: (rt) => rt.stores.ui.getState().openDialog({ kind: 'guide' }) },
   { id: 'help.about', label: 'About Timeline', run: (rt) => rt.stores.ui.getState().openDialog({ kind: 'about' }) },
   {
     id: 'help.repository',
@@ -315,6 +317,7 @@ export const DEFAULT_KEYMAP: Keymap = {
   'view.zoomIn': ['='],
   'view.zoomOut': ['-'],
   'view.zoomReset': ['\\'],
+  'help.guide': ['F1'],
 };
 
 /** Display label of the primary shortcut for a command, if it has one. */

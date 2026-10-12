@@ -23,6 +23,7 @@ import {
   setSequenceResolution,
   getSplittableClipsAt,
   isRangeFree,
+  parseHexColor,
   pairedAudioTrack,
   pairedVideoTrack,
   updateSequence,
@@ -64,6 +65,7 @@ import {
 } from '@timeline/core';
 import { ok, type Result, type TimelineError } from '@timeline/shared';
 import { type EffectLibraryPayload } from '../panels/dnd';
+import { detectClipKeyColor } from '../panels/monitors/key-sampling';
 import { applyEffectPayloadToClip } from '../panels/project/apply-effect-payload';
 import { type AutoCreateTrackKind } from '../state/ui-store';
 import { currentSequence, type EditorServices } from '../runtime/services';
@@ -150,6 +152,45 @@ function chain(project: Project, steps: readonly ((p: Project) => EditResult)[])
     result = step(result.value);
   }
   return result;
+}
+
+interface PreparedPayload {
+  readonly payload: EffectLibraryPayload;
+  readonly note: { readonly text: string; readonly tone: 'info' | 'warning' } | null;
+}
+
+/**
+ * Chroma Key and Screen Replace read the screen color from the clip on the
+ * Program monitor, and Screen Replace takes the media selected in the Project
+ * panel as its replacement.
+ */
+function prepareKeyPayload(services: EditorServices, clipId: ClipId, payload: EffectLibraryPayload): PreparedPayload {
+  if (payload.kind !== 'video-effect') return { payload, note: null };
+  const effect = payload.effect;
+  if (effect.kind !== 'chroma-key' && effect.kind !== 'screen-replace') return { payload, note: null };
+  const [r, g, b] = parseHexColor(effect.color);
+  const preference = b > g && b > r ? 'blue' : 'green';
+  const detected = detectClipKeyColor(clipId, preference);
+  const color = detected ?? effect.color;
+  if (effect.kind === 'chroma-key') {
+    return {
+      payload: { kind: 'video-effect', effect: { ...effect, color } },
+      note: detected ? null : { text: 'Move the playhead over the clip and use the eyedropper to pick the screen color.', tone: 'info' },
+    };
+  }
+  const sequence = currentSequence(services);
+  const clip = sequence?.clips[clipId];
+  const project = services.stores.project.getState().project;
+  const pickedId = services.stores.selection.getState().assetId;
+  const picked = pickedId ? project.mediaAssets[pickedId] : undefined;
+  const sourceAssetId =
+    effect.sourceAssetId ?? (picked && picked.kind !== 'audio' && picked.id !== clip?.assetId ? picked.id : null);
+  const note = sourceAssetId
+    ? detected
+      ? null
+      : { text: 'Screen color not found at the playhead. Pick it with the eyedropper in the Inspector.', tone: 'info' as const }
+    : { text: 'Choose the replacement image or video for Screen Replace in the Inspector.', tone: 'info' as const };
+  return { payload: { kind: 'video-effect', effect: { ...effect, color, sourceAssetId } }, note };
 }
 
 /**
@@ -764,10 +805,13 @@ export function createEditActions(services: EditorServices, media: MediaActions)
     },
 
     applyEffectLibraryPayload(clipId: ClipId, payload: EffectLibraryPayload, label = 'Apply Effect'): boolean {
-      return run(label, (project, sequence) => {
-        const next = applyEffectPayloadToClip(project, sequence.id, clipId, payload);
+      const prepared = prepareKeyPayload(services, clipId, payload);
+      const applied = run(label, (project, sequence) => {
+        const next = applyEffectPayloadToClip(project, sequence.id, clipId, prepared.payload);
         return next ? ok(next) : ok(project);
       });
+      if (applied && prepared.note) ui.getState().notify(prepared.note.text, prepared.note.tone);
+      return applied;
     },
 
     toggleSelectedClipsEnabled(): boolean {

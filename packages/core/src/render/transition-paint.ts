@@ -9,32 +9,32 @@ export interface TransitionPaint {
 
 const FULL: TransitionPaint = { opacity: 1 };
 
-function revealAmount(progress: number, edge: 'in' | 'out'): number {
-  const p = Math.min(1, Math.max(0, progress));
-  return edge === 'in' ? p : 1 - p;
-}
-
 function inset(top: number, right: number, bottom: number, left: number): string {
   return `inset(${top}% ${right}% ${bottom}% ${left}%)`;
+}
+
+/** The picture itself goes to black, instead of fading to whatever is underneath. */
+function dipToBlack(reveal: number): TransitionPaint {
+  return { opacity: 1, filter: `brightness(${reveal.toFixed(4)})` };
 }
 
 function paintForSlug(slug: string, reveal: number): TransitionPaint {
   const r = Math.min(1, Math.max(0, reveal));
   const hide = (1 - r) * 100;
 
-  if (slug.includes('dip-to-black') || slug.includes('dip-black')) return { opacity: r };
+  if (slug.includes('dip-to-black') || slug.includes('dip-black')) return dipToBlack(r);
   if (slug.includes('dip-to-white') || slug.includes('dip-white')) {
-    return { opacity: r, filter: `brightness(${1 + (1 - r) * 2.2})` };
+    return { opacity: 1, filter: `contrast(${r.toFixed(4)}) brightness(${(2 - r).toFixed(4)})` };
   }
   if (slug.includes('cross-dissolve') || slug.includes('morph-cut') || slug.includes('non-additive')) {
     return { opacity: r };
   }
   if (slug.includes('additive')) return { opacity: r, filter: 'brightness(1.35) saturate(1.2)' };
   if (slug.includes('film-dissolve')) return { opacity: r, filter: 'sepia(0.45) contrast(1.15)' };
-  if (slug.includes('color-dissolve') || slug.includes('dissolve-in') || slug.includes('fade-in')) {
-    return { opacity: r, filter: 'sepia(0.55) hue-rotate(18deg)' };
+  if (slug.includes('fade-in') || slug.includes('fade-out') || slug.includes('dissolve-in') || slug.includes('dissolve-out')) {
+    return { opacity: r };
   }
-  if (slug.includes('dissolve-out') || slug.includes('fade-out')) return { opacity: r };
+  if (slug.includes('color-dissolve')) return { opacity: r, filter: 'sepia(0.55) hue-rotate(18deg)' };
   if (slug.includes('block-dissolve') || slug.includes('random-dissolve')) {
     const step = Math.round(r * 6) / 6;
     return { opacity: step, clipPath: inset(hide * 0.15, hide * 0.15, hide * 0.15, hide * 0.15) };
@@ -108,9 +108,8 @@ function slugOf(edge: ClipEdgeTransition): string {
 export function transitionPaint(edge: ClipEdgeTransition, progress: number, side: 'in' | 'out'): TransitionPaint {
   if (edge.videoKind === 'none' || edge.durationFrames <= 0) return FULL;
   const eased = progress <= 0 ? 0 : progress >= 1 ? 1 : Math.sin((progress * Math.PI) / 2);
-  if (edge.videoKind === 'fade' || edge.videoKind === 'dip-black' || edge.videoKind === 'cross-dissolve') {
-    const opacity = side === 'in' ? eased : 1 - eased;
-    return { opacity };
-  }
-  return paintForSlug(slugOf(edge), revealAmount(eased, side));
+  const reveal = side === 'in' ? eased : 1 - eased;
+  if (edge.videoKind === 'dip-black') return dipToBlack(reveal);
+  if (edge.videoKind === 'fade' || edge.videoKind === 'cross-dissolve') return { opacity: reveal };
+  return paintForSlug(slugOf(edge), reveal);
 }

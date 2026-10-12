@@ -65,7 +65,7 @@ const MENU_LAYOUT: MenuLayout = [
     ],
   },
   { id: 'settings', label: 'Settings', items: ['settings.audio'] },
-  { id: 'help', label: 'Help', items: ['help.about', 'help.repository'] },
+  { id: 'help', label: 'Help', items: ['help.guide', 'help.about', 'help.repository'] },
 ];
 
 /**

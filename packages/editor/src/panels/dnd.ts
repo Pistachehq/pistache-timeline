@@ -23,7 +23,12 @@ export type EffectLibraryPayload =
     }
   | { readonly kind: 'video-effect'; readonly effect: import('@timeline/core').VideoEffect }
   | { readonly kind: 'audio-effect'; readonly effect: import('@timeline/core').AudioEffect }
-  | { readonly kind: 'text-animation'; readonly animation: import('@timeline/core').TextAnimationId };
+  | {
+      readonly kind: 'text-animation';
+      readonly animation: import('@timeline/core').TextAnimationId;
+      /** Entrance or exit. Set from the drop position on the clip. */
+      readonly edge?: 'in' | 'out';
+    };
 
 export function writeEffectDragData(dataTransfer: DataTransfer, payload: EffectLibraryPayload): void {
   dataTransfer.setData(EFFECT_DRAG_TYPE, JSON.stringify(payload));
