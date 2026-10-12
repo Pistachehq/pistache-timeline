@@ -5,7 +5,7 @@ import { getClipDuration } from '../model/queries';
 import { type ClipId, type MediaAssetId } from '../model/types';
 import { mediaTimeFromSeconds } from '../time/rational';
 import { activeSequence } from '../test/fixtures';
-import { addClip, addTextClip, removeClips } from './clips';
+import { addClip, addTextClip, removeClips, trimClip } from './clips';
 import { addMediaAssets } from './media';
 import { markSpeechLink, replaceSpokenAudio } from './speech';
 
@@ -106,6 +106,49 @@ describe('replaceSpokenAudio', () => {
     );
     expect(getClipDuration(next.clips[TEXT]!)).toBe(90);
     expect(getClipDuration(next.clips[AUDIO]!)).toBe(90);
+  });
+});
+
+describe('trimClip on spoken text', () => {
+  it('lengthens the text past the voice and leaves the recording in place', () => {
+    const project = spokenProject(2, 2);
+    const sequence = activeSequence(project);
+    const text = sequence.clips[TEXT]!;
+    const audio = sequence.clips[AUDIO]!;
+    const textEnd = text.start + getClipDuration(text);
+    const next = activeSequence(
+      unwrap(trimClip(project, { sequenceId: sequence.id, clipId: TEXT, edge: 'end', frame: textEnd + 45 })),
+    );
+    expect(getClipDuration(next.clips[TEXT]!)).toBe(getClipDuration(text) + 45);
+    expect(next.clips[TEXT]!.start).toBe(text.start);
+    expect(getClipDuration(next.clips[AUDIO]!)).toBe(getClipDuration(audio));
+    expect(next.clips[AUDIO]!.start).toBe(audio.start);
+  });
+
+  it('lengthens the text from the start without moving the voice', () => {
+    const project = spokenProject(2, 2);
+    const sequence = activeSequence(project);
+    const text = sequence.clips[TEXT]!;
+    const audio = sequence.clips[AUDIO]!;
+    const next = activeSequence(
+      unwrap(trimClip(project, { sequenceId: sequence.id, clipId: TEXT, edge: 'start', frame: text.start - 20 })),
+    );
+    expect(next.clips[TEXT]!.start).toBe(text.start - 20);
+    expect(next.clips[TEXT]!.start + getClipDuration(next.clips[TEXT]!)).toBe(text.start + getClipDuration(text));
+    expect(next.clips[AUDIO]!.start).toBe(audio.start);
+    expect(getClipDuration(next.clips[AUDIO]!)).toBe(getClipDuration(audio));
+  });
+
+  it('still shortens the voice together with the text while they share an edge', () => {
+    const project = spokenProject(2, 2);
+    const sequence = activeSequence(project);
+    const text = sequence.clips[TEXT]!;
+    const end = text.start + getClipDuration(text);
+    const next = activeSequence(
+      unwrap(trimClip(project, { sequenceId: sequence.id, clipId: TEXT, edge: 'end', frame: end - 15 })),
+    );
+    expect(getClipDuration(next.clips[TEXT]!)).toBe(getClipDuration(text) - 15);
+    expect(getClipDuration(next.clips[AUDIO]!)).toBe(getClipDuration(text) - 15);
   });
 });
 
