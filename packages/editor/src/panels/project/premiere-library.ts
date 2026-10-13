@@ -15,16 +15,50 @@ function libraryVideoEffect(libraryId: string): VideoEffect {
   return { kind: 'library', libraryId, amount: 100 };
 }
 
+/**
+ * Library names that the built-in effects already cover, so the bin lists each
+ * effect once, plus matte keys that need a second matte layer, which clips do not have.
+ */
+const DUPLICATE_VIDEO_EFFECTS = new Set([
+  'Keying/Chroma Key',
+  'Keying/Green Screen Key',
+  'Keying/Blue Screen Key',
+  'Keying/Ultra Key',
+  'Keying/Color Key',
+  'Keying/Luma Key',
+  'Keying/RGB Difference Key',
+  'Keying/Non-Red Key',
+  'Keying/Track Matte Key',
+  'Keying/Image Matte Key',
+  'Keying/Remove Matte',
+  'Channel/Set Matte',
+  'Blur & Sharpen/Sharpen',
+]);
+
+const DUPLICATE_TRANSITIONS = new Set([
+  'Dissolve/Cross Dissolve',
+  'Dissolve/Fade In',
+  'Dissolve/Fade Out',
+  'Dissolve/Dip to Black',
+]);
+
+export function isDuplicateLibraryTransition(relativePath: string): boolean {
+  return DUPLICATE_TRANSITIONS.has(relativePath);
+}
+
 function videoPayloadForPath(relativePath: string): EffectLibraryPayload {
   const slash = relativePath.lastIndexOf('/');
   const name = (slash >= 0 ? relativePath.slice(slash + 1) : relativePath).toLowerCase();
   const id = `video-effects/${slug(relativePath)}`;
 
   if (name.includes('unsharp')) {
-    return { kind: 'video-effect', effect: { kind: 'sharpen', amount: 40 } };
+    return { kind: 'video-effect', effect: { kind: 'sharpen', amount: 60, radius: 2.5 } };
   }
   if (name === 'sharpen' || name === 'vr sharpen') {
-    return { kind: 'video-effect', effect: { kind: 'sharpen', amount: 28 } };
+    return { kind: 'video-effect', effect: { kind: 'sharpen', amount: 40, radius: 1 } };
+  }
+  if (name === 'gaussian blur' || name === 'fast blur' || name === 'box blur' || name.includes('blur legacy')) {
+    return { kind: 'video-effect', effect: { kind: 'blur', amount: 30, region: null } };
   }
   if (name.includes('black') && name.includes('white')) {
     return { kind: 'video-effect', effect: { kind: 'saturation', amount: -100 } };
@@ -75,7 +109,7 @@ function entryFromTransitionPath(relativePath: string): EffectLibraryEntry {
 }
 
 export const PREMIERE_EFFECT_LIBRARY: readonly EffectLibraryEntry[] = [
-  ...premierePaths.videoEffects.map(entryFromVideoPath),
-  ...premierePaths.videoTransitions.map(entryFromTransitionPath),
+  ...premierePaths.videoEffects.filter((path) => !DUPLICATE_VIDEO_EFFECTS.has(path)).map(entryFromVideoPath),
+  ...premierePaths.videoTransitions.filter((path) => !DUPLICATE_TRANSITIONS.has(path)).map(entryFromTransitionPath),
 ];
 

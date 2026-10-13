@@ -19,8 +19,11 @@ import {
   getActiveSequence,
   getAssetFrameCount,
   getSequence,
+  resolutionForEmptySequence,
+  setSequenceResolution,
   getSplittableClipsAt,
   isRangeFree,
+  parseHexColor,
   pairedAudioTrack,
   pairedVideoTrack,
   updateSequence,
@@ -62,6 +65,7 @@ import {
 } from '@timeline/core';
 import { ok, type Result, type TimelineError } from '@timeline/shared';
 import { type EffectLibraryPayload } from '../panels/dnd';
+import { detectClipKeyColor } from '../panels/monitors/key-sampling';
 import { applyEffectPayloadToClip } from '../panels/project/apply-effect-payload';
 import { type AutoCreateTrackKind } from '../state/ui-store';
 import { currentSequence, type EditorServices } from '../runtime/services';
@@ -150,6 +154,45 @@ function chain(project: Project, steps: readonly ((p: Project) => EditResult)[])
   return result;
 }
 
+interface PreparedPayload {
+  readonly payload: EffectLibraryPayload;
+  readonly note: { readonly text: string; readonly tone: 'info' | 'warning' } | null;
+}
+
+/**
+ * Chroma Key and Screen Replace read the screen color from the clip on the
+ * Program monitor, and Screen Replace takes the media selected in the Project
+ * panel as its replacement.
+ */
+function prepareKeyPayload(services: EditorServices, clipId: ClipId, payload: EffectLibraryPayload): PreparedPayload {
+  if (payload.kind !== 'video-effect') return { payload, note: null };
+  const effect = payload.effect;
+  if (effect.kind !== 'chroma-key' && effect.kind !== 'screen-replace') return { payload, note: null };
+  const [r, g, b] = parseHexColor(effect.color);
+  const preference = b > g && b > r ? 'blue' : 'green';
+  const detected = detectClipKeyColor(clipId, preference);
+  const color = detected ?? effect.color;
+  if (effect.kind === 'chroma-key') {
+    return {
+      payload: { kind: 'video-effect', effect: { ...effect, color } },
+      note: detected ? null : { text: 'Move the playhead over the clip and use the eyedropper to pick the screen color.', tone: 'info' },
+    };
+  }
+  const sequence = currentSequence(services);
+  const clip = sequence?.clips[clipId];
+  const project = services.stores.project.getState().project;
+  const pickedId = services.stores.selection.getState().assetId;
+  const picked = pickedId ? project.mediaAssets[pickedId] : undefined;
+  const sourceAssetId =
+    effect.sourceAssetId ?? (picked && picked.kind !== 'audio' && picked.id !== clip?.assetId ? picked.id : null);
+  const note = sourceAssetId
+    ? detected
+      ? null
+      : { text: 'Screen color not found at the playhead. Pick it with the eyedropper in the Inspector.', tone: 'info' as const }
+    : { text: 'Choose the replacement image or video for Screen Replace in the Inspector.', tone: 'info' as const };
+  return { payload: { kind: 'video-effect', effect: { ...effect, color, sourceAssetId } }, note };
+}
+
 /**
  * Editing entry points used by the UI, menus and shortcuts. Each action maps
  * user intent onto one or more core operations and records a single,
@@ -209,6 +252,15 @@ export function createEditActions(services: EditorServices, media: MediaActions)
     );
   };
 
+  let pendingFrameMatch: { width: number; height: number } | null = null;
+
+  const noteFrameMatch = () => {
+    const match = pendingFrameMatch;
+    pendingFrameMatch = null;
+    if (!match) return;
+    ui.getState().notify(`Sequence frame set to ${match.width}×${match.height} to match the media.`, 'info');
+  };
+
   const placeClipOnProject = (
     project: Project,
     sequence: Sequence,
@@ -217,21 +269,37 @@ export function createEditActions(services: EditorServices, media: MediaActions)
     start: number,
     clipId: ClipId,
   ): EditResult => {
-    const track = findTrack(sequence, trackId);
     const asset = project.mediaAssets[assetId];
-    let result = addClip(project, { sequenceId: sequence.id, trackId, assetId, start, clipId });
+    const fitted = resolutionForEmptySequence(sequence, asset?.resolution ?? null);
+    let working = project;
+    let active = sequence;
+    pendingFrameMatch = null;
+    if (fitted) {
+      const resized = setSequenceResolution(project, {
+        sequenceId: sequence.id,
+        width: fitted.width,
+        height: fitted.height,
+      });
+      if (resized.ok) {
+        working = resized.value;
+        active = getSequence(working, sequence.id) ?? sequence;
+        pendingFrameMatch = fitted;
+      }
+    }
+    const track = findTrack(active, trackId);
+    let result = addClip(working, { sequenceId: active.id, trackId, assetId, start, clipId });
     if (!result.ok || !track || track.kind !== 'video' || !asset?.hasAudio) return result;
 
     const audioTrack = pairedAudioTrack(sequence, track.id);
     if (!audioTrack || audioTrack.locked) return result;
 
-    const seq = getSequence(result.value, sequence.id);
+    const seq = getSequence(result.value, active.id);
     const videoClip = seq?.clips[clipId];
     if (!seq || !videoClip) return result;
 
     const audioClipId = newClipId();
     result = addClip(result.value, {
-      sequenceId: sequence.id,
+      sequenceId: active.id,
       trackId: audioTrack.id,
       assetId,
       start,
@@ -241,7 +309,7 @@ export function createEditActions(services: EditorServices, media: MediaActions)
     });
     if (!result.ok) return result;
 
-    return updateSequence(result.value, sequence.id, (next) =>
+    return updateSequence(result.value, active.id, (next) =>
       ok({
         ...next,
         clips: {
@@ -258,7 +326,11 @@ export function createEditActions(services: EditorServices, media: MediaActions)
     const placed = run(label, (project, sequence) =>
       placeClipOnProject(project, sequence, assetId, trackId, start, clipId),
     );
-    if (!placed) return null;
+    if (!placed) {
+      pendingFrameMatch = null;
+      return null;
+    }
+    noteFrameMatch();
     selection.getState().selectClips([clipId]);
     return clipId;
   };
@@ -331,7 +403,11 @@ export function createEditActions(services: EditorServices, media: MediaActions)
         const track = (kind === 'video' ? seq.videoTracks.at(-1) : seq.audioTracks.at(-1))!;
         return placeClipOnProject(p, seq, assetId, track.id, at, clipId);
       });
-      if (!placed) return null;
+      if (!placed) {
+        pendingFrameMatch = null;
+        return null;
+      }
+      noteFrameMatch();
       selection.getState().selectClips([clipId]);
       return clipId;
     },
@@ -729,10 +805,13 @@ export function createEditActions(services: EditorServices, media: MediaActions)
     },
 
     applyEffectLibraryPayload(clipId: ClipId, payload: EffectLibraryPayload, label = 'Apply Effect'): boolean {
-      return run(label, (project, sequence) => {
-        const next = applyEffectPayloadToClip(project, sequence.id, clipId, payload);
+      const prepared = prepareKeyPayload(services, clipId, payload);
+      const applied = run(label, (project, sequence) => {
+        const next = applyEffectPayloadToClip(project, sequence.id, clipId, prepared.payload);
         return next ? ok(next) : ok(project);
       });
+      if (applied && prepared.note) ui.getState().notify(prepared.note.text, prepared.note.tone);
+      return applied;
     },
 
     toggleSelectedClipsEnabled(): boolean {
@@ -753,6 +832,12 @@ export function createEditActions(services: EditorServices, media: MediaActions)
 
     updateTrack(trackId: TrackId, changes: TrackChanges, label: string): boolean {
       return run(label, (project, sequence) => updateTrack(project, { sequenceId: sequence.id, trackId, changes }));
+    },
+
+    setSequenceFrame(width: number, height: number): boolean {
+      return run('Sequence Settings', (project, sequence) =>
+        setSequenceResolution(project, { sequenceId: sequence.id, width, height }),
+      );
     },
 
     addTrack(kind: TrackKind): boolean {

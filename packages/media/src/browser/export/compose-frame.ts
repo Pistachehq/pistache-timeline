@@ -1,18 +1,32 @@
 import {
+  BLUR_REFERENCE_HEIGHT,
   canvasFilterFromVideoEffects,
+  clipPathFromVideoEffects,
   clipTransitionPaint,
+  cssBlurFilter,
   effectiveClipOpacityPercent,
   evaluateClipTransform,
+  getBlurVideoEffect,
+  getClipDuration,
+  hasPixelVideoEffects,
+  insetClipPathFromRegion,
+  isRegionalBlurEffect,
   libraryEffectClipPath,
   libraryEffectTransform,
-  textAnimationFrame,
-  textAnimationProgress,
+  textClipAnimationFrame,
   type ActiveVideoClip,
+  type BlurVideoEffect,
   type Clip,
   type ClipText,
   type ClipTransform,
   type Sequence,
 } from '@timeline/core';
+import {
+  PixelTracking,
+  replacementAssetIds,
+  type PixelEffectsRenderer,
+  type PixelReplacement,
+} from '../effects/pixel-effects';
 
 /** Position, anchor, rotation, and scale. Anchor 0 keeps the previous centre pivot. */
 function applyClipMotion(
@@ -47,15 +61,20 @@ function applyExtraTransform(ctx: CanvasRenderingContext2D, transform: string): 
 function clipCssPath(ctx: CanvasRenderingContext2D, clipPath: string, dw: number, dh: number): void {
   const inset = /^inset\(([^)]+)\)$/.exec(clipPath);
   if (inset?.[1]) {
-    const parts = inset[1].trim().split(/\s+/).map((part) => Number.parseFloat(part));
+    const [box = '', roundPart] = inset[1].split(/\s+round\s+/);
+    const parts = box.trim().split(/\s+/).map((part) => Number.parseFloat(part) || 0);
     const [t = 0, r = t, b = t, l = r] =
       parts.length === 1 ? [parts[0], parts[0], parts[0], parts[0]] : parts.length === 2 ? [parts[0], parts[1], parts[0], parts[1]] : parts;
     const top = (dh * t) / 100;
     const right = (dw * r) / 100;
     const bottom = (dh * b) / 100;
     const left = (dw * l) / 100;
+    const width = Math.max(1, dw - left - right);
+    const height = Math.max(1, dh - top - bottom);
+    const radius = roundPart ? Math.min(width / 2, height / 2, Number.parseFloat(roundPart) || 0) : 0;
     ctx.beginPath();
-    ctx.rect(-dw / 2 + left, -dh / 2 + top, Math.max(1, dw - left - right), Math.max(1, dh - top - bottom));
+    if (radius > 0 && typeof ctx.roundRect === 'function') ctx.roundRect(-dw / 2 + left, -dh / 2 + top, width, height, radius);
+    else ctx.rect(-dw / 2 + left, -dh / 2 + top, width, height);
     ctx.clip();
     return;
   }
@@ -152,16 +171,14 @@ function drawTextClip(
   width: number,
   height: number,
 ): void {
-  const progress =
-    text.animation === 'none'
-      ? 1
-      : textAnimationProgress(sequenceFrame - clip.start, text.animationFrames || 60);
-  const anim = textAnimationFrame(text.content, text.animation, progress);
+  const anim = textClipAnimationFrame(text, sequenceFrame - clip.start, getClipDuration(clip));
   const scaleX = width / sequence.resolution.width;
   const scaleY = height / sequence.resolution.height;
   const t = evaluateClipTransform(clip, sequenceFrame);
   const paint = clipTransitionPaint(clip, sequenceFrame);
-  const filter = [canvasFilterFromVideoEffects(clip.effects.video), paint.filter].filter(Boolean).join(' ');
+  const filter = [canvasFilterFromVideoEffects(clip.effects.video, height / BLUR_REFERENCE_HEIGHT), paint.filter]
+    .filter(Boolean)
+    .join(' ');
   ctx.save();
   applyClipMotion(ctx, t, width / 2 + t.positionX * scaleX, height / 2 + t.positionY * scaleY, scaleX, scaleY, true);
   applyExtraTransform(ctx, [libraryEffectTransform(clip.effects.video), paint.transform].filter(Boolean).join(' '));
@@ -179,15 +196,22 @@ function drawTextClip(
     ctx.shadowOffsetX = text.shadow.offsetX;
     ctx.shadowOffsetY = text.shadow.offsetY;
   }
-  const pieces: { text: string; opacity: number; offsetY: number }[] = [];
+  interface Piece {
+    readonly text: string;
+    readonly opacity: number;
+    readonly offsetY: number;
+    readonly blur: number;
+    readonly scale: number;
+  }
+  const pieces: Piece[] = [];
   for (const run of anim.runs) {
     const parts = run.text.split('\n');
     parts.forEach((part, index) => {
-      if (index > 0) pieces.push({ text: '\n', opacity: 1, offsetY: 0 });
-      if (part) pieces.push({ text: part, opacity: run.opacity, offsetY: run.offsetY });
+      if (index > 0) pieces.push({ text: '\n', opacity: 1, offsetY: 0, blur: 0, scale: 1 });
+      if (part) pieces.push({ text: part, opacity: run.opacity, offsetY: run.offsetY, blur: run.blur, scale: run.scale });
     });
   }
-  const lines: { text: string; opacity: number; offsetY: number }[][] = [[]];
+  const lines: Piece[][] = [[]];
   for (const piece of pieces) {
     if (piece.text === '\n') lines.push([]);
     else lines[lines.length - 1]?.push(piece);
@@ -219,14 +243,23 @@ function drawTextClip(
     for (const part of line) {
       ctx.save();
       ctx.globalAlpha *= part.opacity;
-      const py = y + part.offsetY;
+      const partWidth = ctx.measureText(part.text).width;
+      let px = x;
+      let py = y + part.offsetY;
+      if (Math.abs(part.scale - 1) > 0.001) {
+        ctx.translate(x + partWidth / 2, py);
+        ctx.scale(part.scale, part.scale);
+        px = -partWidth / 2;
+        py = 0;
+      }
+      if (part.blur > 0.2) ctx.filter = `${filter ? `${filter} ` : ''}blur(${part.blur}px)`;
       if (text.outlineWidth > 0) {
         ctx.lineWidth = text.outlineWidth * 2;
         ctx.strokeStyle = text.outlineColor;
-        ctx.strokeText(part.text, x, py);
+        ctx.strokeText(part.text, px, py);
       }
-      ctx.fillText(part.text, x, py);
-      x += ctx.measureText(part.text).width;
+      ctx.fillText(part.text, px, py);
+      x += partWidth;
       ctx.restore();
     }
   });
@@ -235,22 +268,118 @@ function drawTextClip(
   ctx.letterSpacing = '0px';
 }
 
+/** Keying, Screen Replace, sharpen and vignette for export. One per export run. */
+export interface PixelEffectsContext {
+  readonly renderer: PixelEffectsRenderer;
+  readonly tracking: Map<string, PixelTracking>;
+  /** Replacement picture for a Screen Replace source at this sequence frame. */
+  readonly resolveReplacement: (assetId: string, clip: Clip, sequenceFrame: number) => Promise<PixelReplacement | null>;
+}
+
+const scratchCanvases: HTMLCanvasElement[] = [];
+
+function scratch(index: number, width: number, height: number): CanvasRenderingContext2D | null {
+  let canvas = scratchCanvases[index];
+  if (!canvas) {
+    canvas = document.createElement('canvas');
+    scratchCanvases[index] = canvas;
+  }
+  if (canvas.width !== width || canvas.height !== height) {
+    canvas.width = width;
+    canvas.height = height;
+  }
+  const ctx = canvas.getContext('2d');
+  ctx?.clearRect(0, 0, width, height);
+  return ctx;
+}
+
+async function processPixels(
+  pixel: PixelEffectsContext,
+  clip: Clip,
+  source: VisualSource,
+  dw: number,
+  dh: number,
+  sequenceFrame: number,
+): Promise<VisualSource> {
+  const w = Math.max(1, Math.round(dw));
+  const h = Math.max(1, Math.round(dh));
+  const base = scratch(0, w, h);
+  if (!base) return source;
+  paintSource(base, source, 0, 0, w, h);
+  const replacements = new Map<string, PixelReplacement>();
+  for (const assetId of replacementAssetIds(clip.effects.video)) {
+    const replacement = await pixel.resolveReplacement(assetId, clip, sequenceFrame);
+    if (replacement) replacements.set(assetId, replacement);
+  }
+  let tracking = pixel.tracking.get(clip.id);
+  if (!tracking) {
+    tracking = new PixelTracking();
+    pixel.tracking.set(clip.id, tracking);
+  }
+  const out = pixel.renderer.render({
+    source: base.canvas,
+    sourceWidth: w,
+    sourceHeight: h,
+    outputWidth: w,
+    outputHeight: h,
+    effects: clip.effects.video,
+    replacements,
+    frame: sequenceFrame,
+    tracking,
+  });
+  if (!out) return source;
+  const copy = scratch(1, w, h);
+  if (!copy) return source;
+  copy.drawImage(out, 0, 0);
+  const canvas = copy.canvas;
+  return { width: w, height: h, draw: (target, x, y, dx, dy) => target.drawImage(canvas, x, y, dx, dy) };
+}
+
+/** Sharp picture with a blurred copy inside (or outside) the region, like the Program monitor. */
+function paintWithRegionalBlur(
+  ctx: CanvasRenderingContext2D,
+  source: VisualSource,
+  dw: number,
+  dh: number,
+  baseFilter: string,
+  blur: BlurVideoEffect,
+  blurScale: number,
+): void {
+  const region = blur.region;
+  const blurFilter = cssBlurFilter(blur.amount, blurScale);
+  if (!region || !blurFilter) {
+    paintSource(ctx, source, -dw / 2, -dh / 2, dw, dh);
+    return;
+  }
+  const withBlur = [baseFilter, blurFilter].filter(Boolean).join(' ');
+  const inner = insetClipPathFromRegion(region);
+  ctx.filter = region.internal ? baseFilter || 'none' : withBlur;
+  paintSource(ctx, source, -dw / 2, -dh / 2, dw, dh);
+  ctx.save();
+  clipCssPath(ctx, inner, dw, dh);
+  ctx.filter = region.internal ? withBlur : baseFilter || 'none';
+  paintSource(ctx, source, -dw / 2, -dh / 2, dw, dh);
+  ctx.restore();
+}
+
 export async function drawStackedProgramFrame(
   ctx: CanvasRenderingContext2D,
   options: DrawFrameOptions,
   stack: readonly ActiveVideoClip[],
   sequenceFrame: number,
   resolveSource: (clip: Clip) => Promise<VisualSource | null>,
+  pixel: PixelEffectsContext | null = null,
 ): Promise<void> {
   const { width, height } = options;
   drawGapFrame(ctx, width, height);
+  const blurScale = height / BLUR_REFERENCE_HEIGHT;
   for (const { clip } of stack) {
     if (clip.text) {
       drawTextClip(ctx, clip, clip.text, options.sequence, sequenceFrame, width, height);
       continue;
     }
     if (!clip.assetId) continue;
-    const source = await resolveSource(clip);
+    let source = await resolveSource(clip);
     if (!source) continue;
     const { width: vw, height: vh } = sourceDimensions(source);
     if (vw <= 0 || vh <= 0) continue;
@@ -258,20 +387,29 @@ export async function drawStackedProgramFrame(
     const { sequence } = options;
     const scaleX = width / sequence.resolution.width;
     const scaleY = height / sequence.resolution.height;
+    const fit = Math.min(width / vw, height / vh);
+    const dw = vw * fit;
+    const dh = vh * fit;
+    if (pixel && hasPixelVideoEffects(clip.effects.video)) {
+      source = await processPixels(pixel, clip, source, dw, dh, sequenceFrame);
+    }
     const t = evaluateClipTransform(clip, sequenceFrame);
     const paint = clipTransitionPaint(clip, sequenceFrame);
-    const filter = [canvasFilterFromVideoEffects(clip.effects.video), paint.filter].filter(Boolean).join(' ');
-    const clipPath = paint.clipPath ?? libraryEffectClipPath(clip.effects.video);
+    const filter = [canvasFilterFromVideoEffects(clip.effects.video, blurScale), paint.filter].filter(Boolean).join(' ');
+    const clipPath =
+      paint.clipPath ?? clipPathFromVideoEffects(clip.effects.video, scaleY) ?? libraryEffectClipPath(clip.effects.video);
     ctx.save();
     applyClipMotion(ctx, t, width / 2 + t.positionX * scaleX, height / 2 + t.positionY * scaleY, scaleX, scaleY, false);
     applyExtraTransform(ctx, [libraryEffectTransform(clip.effects.video), paint.transform].filter(Boolean).join(' '));
     ctx.globalAlpha = effectiveClipOpacityPercent(clip, sequenceFrame, sequence) / 100;
-    if (filter) ctx.filter = filter;
-    const fit = Math.min(width / vw, height / vh);
-    const dw = vw * fit;
-    const dh = vh * fit;
     if (clipPath) clipCssPath(ctx, clipPath, dw, dh);
-    paintSource(ctx, source, -dw / 2, -dh / 2, dw, dh);
+    const blur = getBlurVideoEffect(clip.effects.video);
+    if (blur && isRegionalBlurEffect(blur)) {
+      paintWithRegionalBlur(ctx, source, dw, dh, filter, blur, blurScale);
+    } else {
+      if (filter) ctx.filter = filter;
+      paintSource(ctx, source, -dw / 2, -dh / 2, dw, dh);
+    }
     ctx.restore();
     ctx.filter = 'none';
   }

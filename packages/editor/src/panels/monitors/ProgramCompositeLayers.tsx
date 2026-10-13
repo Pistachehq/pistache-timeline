@@ -1,7 +1,9 @@
 import {
+  BLUR_REFERENCE_HEIGHT,
   cssBlurFilter,
   findTrack,
   getClipEnd,
+  hasPixelVideoEffects,
   playbackRateForSpeed,
   getBlurVideoEffect,
   insetClipPathFromRegion,
@@ -47,7 +49,9 @@ import {
   type ProgramLayerRole,
   type ProgramPictureLayer,
 } from './program-clip-layout';
+import { pickClipColor, registerKeySource } from './key-sampling';
 import { ProgramBlurOverlay } from './ProgramBlurOverlay';
+import { ProgramPixelSurface } from './ProgramPixelSurface';
 import { ProgramCropOverlay } from './ProgramCropOverlay';
 import { ProgramTextLayer } from './ProgramTextLayer';
 import { ProgramTransformOverlay } from './ProgramTransformOverlay';
@@ -294,6 +298,35 @@ function CompositeLayer({
   const regionalBlur = blurEffect && blurEffect.region && isRegionalBlurEffect(blurEffect) ? blurEffect : null;
   const url = entry?.status === 'online' && entry.handle ? entry.handle.url : null;
   const isImage = asset?.kind === 'image';
+  const pixelMode = hasPixelVideoEffects(clip.effects.video);
+  const keyPick = useUiState((s) => (s.keyColorPick?.clipId === clip.id ? s.keyColorPick : null));
+  const sourceEl = useRef<HTMLVideoElement | HTMLImageElement | null>(null);
+  const runtime = useRuntime();
+
+  useEffect(
+    () => registerKeySource(clip.id, () => sourceEl.current ?? (isImage ? null : videoRef.current)),
+    [clip.id, isImage],
+  );
+
+  const bindSourceEl = useCallback((node: HTMLVideoElement | HTMLImageElement | null) => {
+    sourceEl.current = node;
+  }, []);
+
+  const pickColor = useCallback(
+    (u: number, v: number) => {
+      const pick = runtime.stores.ui.getState().keyColorPick;
+      if (!pick) return;
+      runtime.stores.ui.getState().setKeyColorPick(null);
+      const color = pickClipColor(clip.id, u, v);
+      const effect = clip.effects.video[pick.effectIndex];
+      if (!color || !effect || (effect.kind !== 'chroma-key' && effect.kind !== 'screen-replace')) return;
+      const next =
+        effect.kind === 'screen-replace' ? { ...effect, color, seedX: u, seedY: v } : { ...effect, color };
+      const video = clip.effects.video.map((item, index) => (index === pick.effectIndex ? next : item));
+      runtime.actions.edit.setClipEffects(clip.id, { ...clip.effects, video }, 'Pick Key Color');
+    },
+    [clip, runtime],
+  );
 
   const mediaW = asset?.resolution?.width ?? 0;
   const mediaH = asset?.resolution?.height ?? 0;
@@ -343,7 +376,7 @@ function CompositeLayer({
     el.addEventListener('loadeddata', park);
     if (el.readyState >= 2) park();
     return () => el.removeEventListener('loadeddata', park);
-  }, [clip, isImage, onDecoded, role, sequence.frameRate, url]);
+  }, [clip, isImage, onDecoded, pixelMode, role, sequence.frameRate, url]);
 
   useEffect(() => {
     const el = videoRef.current;
@@ -352,7 +385,7 @@ function CompositeLayer({
       el.width = decodeW;
       el.height = decodeH;
     }
-  }, [decodeH, decodeW, isImage]);
+  }, [decodeH, decodeW, isImage, pixelMode]);
 
   useEffect(() => {
     const copy = blurCopyRef.current;
@@ -386,10 +419,12 @@ function CompositeLayer({
   };
 
   const mediaClass = 'pointer-events-none block h-full w-full object-fill';
-  const blurFilter = regionalBlur ? cssBlurFilter(regionalBlur.amount) : undefined;
+  const blurFilter = regionalBlur ? cssBlurFilter(regionalBlur.amount, frameHeight / BLUR_REFERENCE_HEIGHT) : undefined;
   const maskPath = regionalBlur?.region ? insetClipPathFromRegion(regionalBlur.region) : undefined;
 
-  const imageEl = <img src={url} alt="" draggable={false} className={mediaClass} decoding="async" />;
+  const imageEl = (
+    <img ref={bindSourceEl} src={url} alt="" draggable={false} className={mediaClass} decoding="async" />
+  );
   const videoEl = (
     <ProgramVideoSurface
       videoRef={bindVideo}
@@ -411,7 +446,26 @@ function CompositeLayer({
   );
 
   let mediaBody: ReactNode;
-  if (regionalBlur && blurFilter && maskPath && regionalBlur.region) {
+  if (pixelMode) {
+    mediaBody = (
+      <ProgramPixelSurface
+        clip={clip}
+        sequence={sequence}
+        playhead={playhead}
+        playing={playing}
+        decodeW={decodeW}
+        decodeH={decodeH}
+        frameHeight={frameHeight}
+        isImage={isImage}
+        url={url}
+        videoRef={bindVideo}
+        sourceRef={bindSourceEl}
+        regionalBlur={regionalBlur}
+        picking={keyPick !== null && !hidden}
+        onPick={pickColor}
+      />
+    );
+  } else if (regionalBlur && blurFilter && maskPath && regionalBlur.region) {
     const sharp = isImage ? imageEl : videoEl;
     const copy = isImage ? imageCopy : videoCopy;
     if (regionalBlur.region.internal) {
@@ -637,6 +691,7 @@ export function ProgramCompositeLayers({ sequence }: { readonly sequence: Sequen
   }, [playing, runtime, syncVideos]);
 
   const tool = useUiState((s) => s.tool);
+  const keyColorPick = useUiState((s) => s.keyColorPick);
 
   const dragRef = useRef<{
     clipId: ClipId;
@@ -654,6 +709,13 @@ export function ProgramCompositeLayers({ sequence }: { readonly sequence: Sequen
 
   const onPointerDown = (event: ReactPointerEvent) => {
     if (event.button !== 0 || tool === 'hand') return;
+    if (keyColorPick) {
+      event.preventDefault();
+      event.stopPropagation();
+      runtime.stores.ui.getState().setKeyColorPick(null);
+      runtime.stores.ui.getState().notify('Click on the clip itself to pick the key color.', 'warning');
+      return;
+    }
     const frame = outerRef.current;
     if (!frame) return;
     const hitId = hitTestProgramClipAt(event.clientX, event.clientY, frame, stack);
@@ -752,7 +814,13 @@ export function ProgramCompositeLayers({ sequence }: { readonly sequence: Sequen
   return (
     <div
       ref={outerRef}
-        className={tool === 'text' || tool === 'speech' ? 'absolute inset-0 cursor-text overflow-hidden' : 'absolute inset-0 cursor-default overflow-hidden'}
+        className={
+          keyColorPick
+            ? 'absolute inset-0 cursor-crosshair overflow-hidden'
+            : tool === 'text' || tool === 'speech'
+              ? 'absolute inset-0 cursor-text overflow-hidden'
+              : 'absolute inset-0 cursor-default overflow-hidden'
+        }
       onPointerDown={onPointerDown}
       data-testid="program-composite"
     >
@@ -816,7 +884,7 @@ export function ProgramCompositeLayers({ sequence }: { readonly sequence: Sequen
           zIndex={(selectedStackIndex + 1) * LAYER_Z + 21}
         />
       ) : null}
-      {selectedId && selectedStackIndex >= 0 && !cropEditId && !blurEditId ? (
+      {selectedId && selectedStackIndex >= 0 && !cropEditId && !blurEditId && !keyColorPick ? (
         <ProgramTransformOverlay
           sequence={sequence}
           frameRef={outerRef}

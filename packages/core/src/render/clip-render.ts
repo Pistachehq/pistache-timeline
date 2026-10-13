@@ -129,17 +129,23 @@ export function effectiveClipOpacityPercent(clip: Clip, sequenceFrame: number, s
 }
 
 /** Same filter chain as {@link cssFilterFromVideoEffects} for canvas 2D `ctx.filter`. */
-export function canvasFilterFromVideoEffects(effects: readonly VideoEffect[]): string | undefined {
-  return cssFilterFromVideoEffects(effects);
+export function canvasFilterFromVideoEffects(effects: readonly VideoEffect[], blurScale = 1): string | undefined {
+  return cssFilterFromVideoEffects(effects, blurScale);
 }
 
-export function blurFilterPx(amount: number): number {
-  return amount * 0.2;
+/**
+ * Blur radii are defined for a picture this tall. Callers pass
+ * `renderedHeight / BLUR_REFERENCE_HEIGHT` so the monitor and export match.
+ */
+export const BLUR_REFERENCE_HEIGHT = 540;
+
+export function blurFilterPx(amount: number, scale = 1): number {
+  return amount * 0.2 * scale;
 }
 
-export function cssBlurFilter(amount: number): string | undefined {
+export function cssBlurFilter(amount: number, scale = 1): string | undefined {
   if (amount <= 0) return undefined;
-  return `blur(${blurFilterPx(amount)}px)`;
+  return `blur(${Number(blurFilterPx(amount, scale).toFixed(3))}px)`;
 }
 
 export type BlurVideoEffect = VideoEffect & { readonly kind: 'blur' };
@@ -162,13 +168,13 @@ export function insetClipPathFromRegion(region: EffectRegion): string {
 }
 
 /** Filters applied on the whole clip layer (regional blur is composited separately). */
-export function cssFilterFromVideoEffects(effects: readonly VideoEffect[]): string | undefined {
+export function cssFilterFromVideoEffects(effects: readonly VideoEffect[], blurScale = 1): string | undefined {
   const parts: string[] = [];
   for (const effect of effects) {
     switch (effect.kind) {
       case 'blur': {
         if (isRegionalBlurEffect(effect)) break;
-        const blur = cssBlurFilter(effect.amount);
+        const blur = cssBlurFilter(effect.amount, blurScale);
         if (blur) parts.push(blur);
         break;
       }
@@ -183,9 +189,6 @@ export function cssFilterFromVideoEffects(effects: readonly VideoEffect[]): stri
         break;
       case 'hue-rotate':
         if (effect.degrees !== 0) parts.push(`hue-rotate(${effect.degrees}deg)`);
-        break;
-      case 'sharpen':
-        if (effect.amount > 0) parts.push(`contrast(${1 + effect.amount / 200})`);
         break;
       case 'brightness-contrast':
         parts.push(`brightness(${1 + effect.brightness / 100})`);
@@ -221,24 +224,26 @@ export function libraryEffectClipPath(effects: readonly VideoEffect[]): string |
   return undefined;
 }
 
-export function clipPathFromVideoEffects(effects: readonly VideoEffect[]): string | undefined {
+/**
+ * Crop and rounded corners as one CSS `inset()`. The corner radius is in
+ * sequence pixels; `pixelScale` converts it to the space the path is drawn in.
+ */
+export function clipPathFromVideoEffects(effects: readonly VideoEffect[], pixelScale = 1): string | undefined {
   let crop: VideoEffect & { kind: 'crop' } | undefined;
   let round: VideoEffect & { kind: 'round-corners' } | undefined;
   for (const effect of effects) {
     if (effect.kind === 'crop') crop = effect;
     if (effect.kind === 'round-corners') round = effect;
   }
-  if (round && round.radius > 0) {
-    return `inset(0 round ${round.radius}px)`;
-  }
-  if (crop) {
-    const t = clamp(crop.top, 0, 90);
-    const r = clamp(crop.right, 0, 90);
-    const b = clamp(crop.bottom, 0, 90);
-    const l = clamp(crop.left, 0, 90);
-    if (t + r + b + l > 0) return `inset(${t}% ${r}% ${b}% ${l}%)`;
-  }
-  return undefined;
+  const t = crop ? clamp(crop.top, 0, 90) : 0;
+  const r = crop ? clamp(crop.right, 0, 90) : 0;
+  const b = crop ? clamp(crop.bottom, 0, 90) : 0;
+  const l = crop ? clamp(crop.left, 0, 90) : 0;
+  const radius = round ? Math.max(0, round.radius * pixelScale) : 0;
+  const cropped = t + r + b + l > 0;
+  if (!cropped && radius <= 0) return undefined;
+  const box = cropped ? `${t}% ${r}% ${b}% ${l}%` : '0';
+  return radius > 0 ? `inset(${box} round ${Number(radius.toFixed(2))}px)` : `inset(${box})`;
 }
 
 export function audioEffectGainDb(effects: ClipEffects): number {

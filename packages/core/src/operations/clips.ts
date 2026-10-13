@@ -179,10 +179,13 @@ export function updateClipText(project: Project, input: UpdateClipTextInput): Ed
     if (!clip.text) return clip;
     const maxFrames = Math.max(1, maxTransitionFramesForClip(getClipDuration(clip)));
     const requested = input.text.animationFrames ?? clip.text.animationFrames ?? DEFAULT_CLIP_TEXT.animationFrames;
+    const requestedOut =
+      input.text.outAnimationFrames ?? clip.text.outAnimationFrames ?? DEFAULT_CLIP_TEXT.outAnimationFrames;
     const text: ClipText = {
       ...clip.text,
       ...input.text,
       animationFrames: Math.round(Math.min(maxFrames, Math.max(1, requested))),
+      outAnimationFrames: Math.round(Math.min(maxFrames, Math.max(1, requestedOut))),
     };
     return { ...clip, text, name: textClipName(text.content) };
   });
@@ -404,6 +407,29 @@ function clearClipLink(sequence: Sequence, clipId: ClipId): Sequence {
 
 const MIN_CLIP_DURATION_FRAMES = 1;
 
+function isSpeechPair(clip: Clip, partner: Clip): boolean {
+  return (clip.speaks && partner.speechSourceId === clip.id) || (partner.speaks && clip.speechSourceId === partner.id);
+}
+
+/** Keeps a trim request inside the clip's own media and the previous clip. */
+function clampTrimFrame(
+  sequence: Sequence,
+  clip: Clip,
+  edge: 'start' | 'end',
+  frame: number,
+  maxSourceOutFrames: number,
+  extendStart: boolean,
+): number {
+  if (edge === 'start') {
+    const bounds = clipStartTrimBounds(clip, maxSourceOutFrames, extendStart);
+    const minStart = Math.min(bounds.max, Math.max(bounds.min, clipStartFloor(sequence, clip)));
+    return Math.min(bounds.max, Math.max(minStart, Math.round(frame)));
+  }
+  const minEnd = clip.start + MIN_CLIP_DURATION_FRAMES;
+  const maxEnd = clip.start + timelineFrameCount(Math.max(0, maxSourceOutFrames - clip.sourceIn), clip.speed);
+  return Math.min(maxEnd, Math.max(minEnd, Math.round(frame)));
+}
+
 export interface TrimClipInput {
   readonly sequenceId: SequenceId;
   readonly clipId: ClipId;
@@ -498,11 +524,16 @@ export function trimClip(project: Project, input: TrimClipInput): EditResult {
             ? getMaxClipSourceOutFrames(partnerAsset, sequence)
             : maxSourceOut;
         const partnerExtends = partner.text !== null || (partnerAsset ? isStillImageAsset(partnerAsset) : false);
+        // Spoken text may outlast its voice. The voice stops at the recording
+        // instead of rejecting the whole trim.
+        const partnerFrame = isSpeechPair(clip, partner)
+          ? clampTrimFrame(sequence, partner, input.edge, input.frame, partnerMaxSourceOut, partnerExtends)
+          : input.frame;
         const second = trimClipInSequence(
           next,
           partnerId,
           input.edge,
-          input.frame,
+          partnerFrame,
           partnerMaxSourceOut,
           partnerExtends,
         );

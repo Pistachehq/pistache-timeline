@@ -13,4 +13,21 @@ export {
   type WaveformPeaks,
 } from './browser/waveform';
 
+export {
+  PixelEffectsRenderer,
+  PixelTracking,
+  replacementAssetIds,
+  replacementTimeSeconds,
+  type PixelFrameInput,
+  type PixelReplacement,
+  type PixelSource,
+} from './browser/effects/pixel-effects';
+export {
+  audioChainKey,
+  buildAudioEffectChain,
+  gateTargetGain,
+  noiseGateOf,
+  type AudioEffectChain,
+} from './browser/effects/audio-chain';
+
 export { createDesktopMediaEngine, type DesktopMediaBridge } from './desktop/desktop-media-engine';

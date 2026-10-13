@@ -21,6 +21,7 @@ export type CommandId =
   | 'clip.nudgeLeft'
   | 'clip.nudgeRight'
   | 'clip.toggleEnabled'
+  | 'sequence.settings'
   | 'sequence.addVideoTrack'
   | 'sequence.addAudioTrack'
   | 'tool.select'
@@ -43,6 +44,7 @@ export type CommandId =
   | 'view.zoomFit'
   | 'view.snap'
   | 'settings.audio'
+  | 'help.guide'
   | 'help.about'
   | 'help.repository';
 
@@ -126,6 +128,11 @@ export const COMMANDS: readonly Command[] = [
     label: 'Enable / Disable Clip',
     run: (rt) => rt.actions.edit.toggleSelectedClipsEnabled(),
     isEnabled: hasSelection,
+  },
+  {
+    id: 'sequence.settings',
+    label: 'Sequence Settings…',
+    run: (rt) => rt.stores.ui.getState().openDialog({ kind: 'sequence-settings' }),
   },
   { id: 'sequence.addVideoTrack', label: 'Add Video Track', run: (rt) => rt.actions.edit.addTrack('video') },
   { id: 'sequence.addAudioTrack', label: 'Add Audio Track', run: (rt) => rt.actions.edit.addTrack('audio') },
@@ -230,6 +237,7 @@ export const COMMANDS: readonly Command[] = [
     run: (rt) => rt.stores.ui.getState().openDialog({ kind: 'audio-hardware' }),
   },
 
+  { id: 'help.guide', label: 'Guide', run: (rt) => rt.stores.ui.getState().openDialog({ kind: 'guide' }) },
   { id: 'help.about', label: 'About Timeline', run: (rt) => rt.stores.ui.getState().openDialog({ kind: 'about' }) },
   {
     id: 'help.repository',
@@ -309,6 +317,7 @@ export const DEFAULT_KEYMAP: Keymap = {
   'view.zoomIn': ['='],
   'view.zoomOut': ['-'],
   'view.zoomReset': ['\\'],
+  'help.guide': ['F1'],
 };
 
 /** Display label of the primary shortcut for a command, if it has one. */

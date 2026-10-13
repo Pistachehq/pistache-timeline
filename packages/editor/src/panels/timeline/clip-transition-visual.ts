@@ -58,6 +58,14 @@ export function clipEdgeTags(sequence: Sequence, track: Track, clip: Clip, clipW
       label: textAnimationLabel(text.animation),
     });
   }
+  if (text && text.outAnimation !== 'none') {
+    tags.push({
+      key: `text-out-${clip.id}`,
+      side: 'end',
+      widthPx: tagWidth(text.outAnimationFrames || 30, clipWidthPx, pixelsPerFrame),
+      label: `${textAnimationLabel(text.outAnimation)} out`,
+    });
+  }
   return tags;
 }
 

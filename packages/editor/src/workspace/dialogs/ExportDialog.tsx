@@ -2,8 +2,8 @@ import { formatDisplayTime, formatFrameRate, getSequenceDuration } from '@timeli
 import { type ExportProgress } from '@timeline/media';
 import { isAbortError, toErrorMessage } from '@timeline/shared';
 import { Button, Dialog, Select } from '@timeline/ui';
-import { Info, Loader2 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Info, Link2, Loader2, Unlink2 } from 'lucide-react';
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTimeDisplayFormat } from '../../hooks/use-format-display-time';
 import { useProjectState, useRuntime } from '../../runtime/context';
 import { useActiveSequence } from '../../runtime/hooks';
@@ -12,15 +12,19 @@ import {
   FRAME_RATE_PRESET_OPTIONS,
   type ExportFrameRatePreset,
   type ExportResolutionPreset,
+  linkedExportDimension,
+  previewLinkedDimension,
   RESOLUTION_PRESET_OPTIONS,
+  resolutionForPreset,
+  snapExportDimension,
 } from './export-presets';
 
-function Row({ label, value }: { label: string; value: string }) {
+function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="flex justify-between gap-4 py-0.5">
-      <dt className="text-fg-subtle">{label}</dt>
-      <dd className="text-fg">{value}</dd>
-    </div>
+    <label className="flex min-w-0 flex-col gap-1">
+      <span className="text-2xs text-fg-subtle">{label}</span>
+      {children}
+    </label>
   );
 }
 
@@ -49,12 +53,14 @@ const WEBM_FORMAT = {
   audioCodec: 'opus',
 };
 
-type ExportSpeed = 'fast' | 'compatible';
+type ExportContainer = 'mp4' | 'webm';
 
-const SPEED_OPTIONS: readonly { value: ExportSpeed; label: string }[] = [
-  { value: 'fast', label: 'Fast — H.264 (GPU when available)' },
-  { value: 'compatible', label: 'Compatible — WebM (VP9)' },
+const FORMAT_OPTIONS: readonly { value: ExportContainer; label: string }[] = [
+  { value: 'mp4', label: 'MP4 — H.264 + AAC' },
+  { value: 'webm', label: 'WebM — VP9 + Opus' },
 ];
+
+const selectClass = 'h-7! w-full min-w-0 max-w-full px-2 text-fg';
 
 /** Export the active sequence. Fast mode encodes H.264, using the GPU when the device can. */
 export function ExportDialog({ onClose }: { onClose: () => void }) {
@@ -64,11 +70,17 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
   const timeFormat = useTimeDisplayFormat();
   const supported = runtime.platform.media.capabilities.export;
 
-  const [speed, setSpeed] = useState<ExportSpeed>('fast');
+  const [format, setFormat] = useState<ExportContainer>('mp4');
   const [resolutionPreset, setResolutionPreset] = useState<ExportResolutionPreset>('sequence');
   const [frameRatePreset, setFrameRatePreset] = useState<ExportFrameRatePreset>('sequence');
   const [customWidth, setCustomWidth] = useState(sequence?.resolution.width ?? 1920);
   const [customHeight, setCustomHeight] = useState(sequence?.resolution.height ?? 1080);
+  const [lockAspect, setLockAspect] = useState(true);
+  const [aspect, setAspect] = useState(() => {
+    const width = sequence?.resolution.width ?? 1920;
+    const height = sequence?.resolution.height ?? 1080;
+    return height > 0 ? width / height : 16 / 9;
+  });
 
   const output = useMemo(() => {
     if (!sequence) return null;
@@ -104,7 +116,7 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
         {
           project,
           sequenceId: sequence.id,
-          format: speed === 'fast' ? FAST_FORMAT : WEBM_FORMAT,
+          format: format === 'mp4' ? FAST_FORMAT : WEBM_FORMAT,
           output,
         },
         {
@@ -159,122 +171,157 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
       }
     >
       {sequence ? (
-        <>
-          <dl className="mb-3 text-xs">
-            <Row label="Sequence" value={sequence.name} />
-            <Row
-              label="Duration"
-              value={formatDisplayTime(getSequenceDuration(sequence), sequence.frameRate, timeFormat)}
-            />
-            <Row label="Format" value={speed === 'fast' ? 'MP4 (H.264 + AAC)' : 'WebM (VP9 + Opus)'} />
-          </dl>
+        <div className="flex min-w-0 flex-col gap-3">
+          <div className="flex items-baseline justify-between gap-3">
+            <p className="min-w-0 truncate text-sm font-medium text-fg">{sequence.name}</p>
+            <p className="shrink-0 font-mono text-xs text-fg-muted">
+              {formatDisplayTime(getSequenceDuration(sequence), sequence.frameRate, timeFormat)}
+            </p>
+          </div>
 
-          <div className="mb-3 grid gap-2 text-xs">
-            <label className="flex flex-col gap-1">
-              <span className="text-fg-subtle">Encoder</span>
+          <div className="grid min-w-0 gap-2.5">
+            <Field label="Format">
               <Select
-                label="Export encoder"
-                value={speed}
-                options={SPEED_OPTIONS}
-                onValueChange={setSpeed}
+                label="Export format"
+                className={selectClass}
+                value={format}
+                options={FORMAT_OPTIONS}
+                onValueChange={setFormat}
                 disabled={exporting}
               />
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className="text-fg-subtle">Resolution</span>
+            </Field>
+            <Field label="Resolution">
               <Select
                 label="Export resolution"
+                className={selectClass}
                 value={resolutionPreset}
                 options={RESOLUTION_PRESET_OPTIONS}
                 onValueChange={(value) => {
                   setResolutionPreset(value);
-                  if (value === 'custom' && sequence) {
-                    setCustomWidth(sequence.resolution.width);
-                    setCustomHeight(sequence.resolution.height);
-                  }
+                  if (value === 'custom' || !sequence) return;
+                  const size = resolutionForPreset(sequence, value);
+                  setCustomWidth(size.width);
+                  setCustomHeight(size.height);
+                  if (size.height > 0) setAspect(size.width / size.height);
                 }}
                 disabled={exporting}
               />
-            </label>
-            {resolutionPreset === 'custom' ? (
-              <div className="grid grid-cols-2 gap-2">
-                <label className="flex flex-col gap-1">
-                  <span className="text-fg-subtle">Width (px)</span>
-                  <input
-                    type="number"
-                    min={16}
-                    step={2}
-                    value={customWidth}
-                    disabled={exporting}
-                    onChange={(e) => setCustomWidth(Number(e.target.value))}
-                    className="h-7 rounded-sm border border-line-strong bg-surface-3 px-2 text-fg"
-                  />
-                </label>
-                <label className="flex flex-col gap-1">
-                  <span className="text-fg-subtle">Height (px)</span>
-                  <input
-                    type="number"
-                    min={16}
-                    step={2}
-                    value={customHeight}
-                    disabled={exporting}
-                    onChange={(e) => setCustomHeight(Number(e.target.value))}
-                    className="h-7 rounded-sm border border-line-strong bg-surface-3 px-2 text-fg"
-                  />
-                </label>
-              </div>
-            ) : null}
-            <label className="flex flex-col gap-1">
-              <span className="text-fg-subtle">Frame rate</span>
+            </Field>
+            <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] gap-x-2 gap-y-1">
+              <span className="text-2xs text-fg-subtle">Width</span>
+              <span />
+              <span className="text-2xs text-fg-subtle">Height</span>
+              <input
+                type="number"
+                aria-label="Width in pixels"
+                min={16}
+                step={2}
+                value={customWidth}
+                disabled={exporting}
+                onChange={(event) => {
+                  const next = Number(event.target.value);
+                  setResolutionPreset('custom');
+                  setCustomWidth(next);
+                  if (lockAspect) setCustomHeight(previewLinkedDimension(next, aspect, 'width'));
+                }}
+                onBlur={(event) => {
+                  const next = snapExportDimension(Number(event.currentTarget.value));
+                  setCustomWidth(next);
+                  if (lockAspect) setCustomHeight(linkedExportDimension(next, aspect, 'width'));
+                }}
+                className="h-7 w-full min-w-0 rounded-sm border border-line-strong bg-surface-3 px-2 font-mono text-fg outline-none [appearance:textfield] focus:border-accent disabled:opacity-45 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+              />
+              <button
+                type="button"
+                aria-label={lockAspect ? 'Unlock aspect ratio' : 'Lock aspect ratio'}
+                aria-pressed={lockAspect}
+                title={lockAspect ? 'Unlock aspect ratio' : 'Lock aspect ratio'}
+                disabled={exporting}
+                onClick={() => {
+                  if (!lockAspect && customHeight > 0 && Number.isFinite(customWidth)) {
+                    setAspect(customWidth / customHeight);
+                  }
+                  setLockAspect((locked) => !locked);
+                }}
+                className={`flex size-7 items-center justify-center rounded-sm border disabled:opacity-45 ${
+                  lockAspect
+                    ? 'border-accent/40 bg-accent-muted text-accent'
+                    : 'border-line-strong bg-surface-3 text-fg-subtle hover:text-fg'
+                }`}
+              >
+                {lockAspect ? <Link2 className="size-3.5" /> : <Unlink2 className="size-3.5" />}
+              </button>
+              <input
+                type="number"
+                aria-label="Height in pixels"
+                min={16}
+                step={2}
+                value={customHeight}
+                disabled={exporting}
+                onChange={(event) => {
+                  const next = Number(event.target.value);
+                  setResolutionPreset('custom');
+                  setCustomHeight(next);
+                  if (lockAspect) setCustomWidth(previewLinkedDimension(next, aspect, 'height'));
+                }}
+                onBlur={(event) => {
+                  const next = snapExportDimension(Number(event.currentTarget.value));
+                  setCustomHeight(next);
+                  if (lockAspect) setCustomWidth(linkedExportDimension(next, aspect, 'height'));
+                }}
+                className="h-7 w-full min-w-0 rounded-sm border border-line-strong bg-surface-3 px-2 font-mono text-fg outline-none [appearance:textfield] focus:border-accent disabled:opacity-45 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+              />
+            </div>
+            <Field label="Frame rate">
               <Select
                 label="Export frame rate"
+                className={selectClass}
                 value={frameRatePreset}
                 options={FRAME_RATE_PRESET_OPTIONS}
                 onValueChange={setFrameRatePreset}
                 disabled={exporting}
               />
-            </label>
-            {output ? (
-              <p className="text-fg-muted">
-                Output: {output.width} × {output.height} at {formatFrameRate(output.frameRate)}
-              </p>
-            ) : null}
+            </Field>
           </div>
-        </>
+
+          {output ? (
+            <p className="flex items-center justify-between rounded-sm bg-surface-1 px-2.5 py-2 text-xs">
+              <span className="text-fg-subtle">Output</span>
+              <span className="font-mono text-fg">
+                {output.width} × {output.height}
+                <span className="text-fg-subtle"> · </span>
+                {formatFrameRate(output.frameRate)}
+              </span>
+            </p>
+          ) : null}
+        </div>
       ) : null}
 
       {exporting && progress ? (
-        <div className="mb-3 space-y-1.5" aria-live="polite">
+        <div className="mt-3 space-y-1.5" aria-live="polite">
           <div className="flex justify-between text-xs text-fg-muted">
             <span>{phaseLabel(progress.phase)}</span>
-            <span>{progressPercent}%</span>
+            <span className="font-mono">{progressPercent}%</span>
           </div>
-          <div className="h-1.5 overflow-hidden rounded-full bg-surface-2">
-            <div
-              className="h-full bg-accent transition-[width] duration-150"
-              style={{ width: `${progressPercent}%` }}
-            />
+          <div className="h-1 overflow-hidden rounded-full bg-surface-0">
+            <div className="h-full bg-accent transition-[width] duration-150" style={{ width: `${progressPercent}%` }} />
           </div>
         </div>
       ) : null}
 
-      <div className="flex gap-2 rounded-sm border border-line-strong bg-surface-1 p-2.5 text-xs">
-        <Info className="mt-0.5 size-3.5 shrink-0 text-accent" />
+      <p className="mt-3 flex gap-2 text-2xs leading-relaxed text-fg-subtle">
+        <Info className="mt-0.5 size-3 shrink-0 text-fg-muted" />
         {supported ? (
-          <p>
-            Fast export reads each video straight through and encodes H.264 on the GPU when this device supports it.
-            If it does not, the file is still H.264 on the CPU, or WebM when H.264 is unavailable. Video follows the
-            Program monitor; empty areas are black. Keep this tab open until the export finishes.
-          </p>
+          <span>H.264 uses the GPU when this device can. Keep this tab open until the file is saved.</span>
         ) : (
-          <p>
+          <span>
             Exporting requires WebCodecs (recent Chrome or Edge).{' '}
             {runtime.platform.kind === 'desktop'
-              ? 'The desktop app uses the same renderer in Chromium; FFmpeg export is planned later.'
+              ? 'The desktop app uses the same renderer in Chromium.'
               : 'Other browsers may gain support in a future release.'}
-          </p>
+          </span>
         )}
-      </div>
+      </p>
     </Dialog>
   );
 }

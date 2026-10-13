@@ -95,9 +95,16 @@ export interface PromptRequest {
 
 export type ProjectBinTab = 'media' | 'effects';
 
+export interface KeyColorPick {
+  readonly clipId: ClipId;
+  readonly effectIndex: number;
+}
+
 export type DialogState =
   | { readonly kind: 'export' }
+  | { readonly kind: 'sequence-settings' }
   | { readonly kind: 'about' }
+  | { readonly kind: 'guide' }
   | { readonly kind: 'audio-hardware' }
   | { readonly kind: 'confirm'; readonly request: ConfirmRequest }
   | { readonly kind: 'prompt'; readonly request: PromptRequest };
@@ -139,6 +146,8 @@ export interface UiState {
   readonly clipBlurEditId: ClipId | null;
   /** Text clip being typed in the program monitor. */
   readonly textEditingClipId: ClipId | null;
+  /** Eyedropper: the next click on this clip in the Program monitor sets the key color of that effect. */
+  readonly keyColorPick: KeyColorPick | null;
   /** Folder/asset ids playing a short enter animation in the media bin. */
   readonly mediaBinPopInIds: readonly string[];
   /** Audio track currently recording a voice over, if any. */
@@ -175,6 +184,7 @@ export interface UiState {
   setClipCropEditId(clipId: ClipId | null): void;
   setClipBlurEditId(clipId: ClipId | null): void;
   setTextEditingClipId(clipId: ClipId | null): void;
+  setKeyColorPick(pick: KeyColorPick | null): void;
   flashMediaBinPopIn(ids: readonly string[]): void;
   setVoiceOverTrackId(trackId: TrackId | null): void;
   requestZoomFit(): void;
@@ -210,6 +220,7 @@ export function createUiStore(): UiStore {
     clipCropEditId: null,
     clipBlurEditId: null,
     textEditingClipId: null,
+    keyColorPick: null,
     mediaBinPopInIds: [],
     voiceOverTrackId: null,
     zoomFitNonce: 0,
@@ -301,6 +312,7 @@ export function createUiStore(): UiStore {
     setClipBlurEditId: (clipBlurEditId) =>
       set({ clipBlurEditId, clipCropEditId: clipBlurEditId ? null : get().clipCropEditId }),
     setTextEditingClipId: (textEditingClipId) => set({ textEditingClipId }),
+    setKeyColorPick: (keyColorPick) => set({ keyColorPick }),
 
     setVoiceOverTrackId: (voiceOverTrackId) => set({ voiceOverTrackId }),
     requestZoomFit: () => set((state) => ({ zoomFitNonce: state.zoomFitNonce + 1 })),

@@ -44,6 +44,9 @@ export interface ClipText {
   /** Plate behind the glyphs. `null` draws the text on the picture. */
   readonly backgroundColor: string | null;
   readonly animation: TextAnimationId;
+  /** Exit transition: the same reveal played backwards over the last `outAnimationFrames`. */
+  readonly outAnimation: TextAnimationId;
+  readonly outAnimationFrames: number;
 }
 
 export const DEFAULT_CLIP_TEXT: ClipText = {
@@ -64,6 +67,8 @@ export const DEFAULT_CLIP_TEXT: ClipText = {
   outlineColor: '#000000',
   backgroundColor: null,
   animation: 'none',
+  outAnimation: 'none',
+  outAnimationFrames: 30,
 };
 
 /** Text clips can be extended far past their original duration. */

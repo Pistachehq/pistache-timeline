@@ -1,8 +1,14 @@
 import { type FrameRate, type MediaTime } from '../time/rational';
 import {
+  AUDIO_EFFECT_DEFAULTS,
+  AUDIO_EFFECT_KINDS,
   AUDIO_FADE_CURVES,
   DEFAULT_CLIP_EFFECTS,
   DEFAULT_CLIP_TRANSITIONS,
+  DEFAULT_KEY_CONTROLS,
+  defaultChromaKey,
+  KEY_COLOR_PRESETS,
+  SCREEN_REPLACE_FITS,
   VIDEO_EFFECT_KINDS,
   VIDEO_TRANSITION_KINDS,
   type AudioEffect,
@@ -10,6 +16,8 @@ import {
   type ClipEffects,
   type ClipTransitions,
   type EffectRegion,
+  type KeyControls,
+  type ScreenReplaceFit,
   type VideoEffect,
 } from '../model/effects';
 import { clipSpeedPercent } from '../model/speed';
@@ -200,6 +208,48 @@ function parseEffectRegion(value: unknown, path: string): EffectRegion | null {
   };
 }
 
+function optionalNumber(obj: JsonObject, key: string, fallback: number, min = -Infinity, max = Infinity): number {
+  const value = obj[key];
+  if (typeof value !== 'number' || !Number.isFinite(value)) return fallback;
+  return Math.min(max, Math.max(min, value));
+}
+
+const HEX_COLOR = /^#[0-9a-f]{6}$/i;
+
+function parseKeyControls(obj: JsonObject): KeyControls {
+  const color = typeof obj.color === 'string' && HEX_COLOR.test(obj.color) ? obj.color.toLowerCase() : DEFAULT_KEY_CONTROLS.color;
+  return {
+    color,
+    tolerance: optionalNumber(obj, 'tolerance', DEFAULT_KEY_CONTROLS.tolerance, 0, 100),
+    softness: optionalNumber(obj, 'softness', DEFAULT_KEY_CONTROLS.softness, 0, 100),
+    spill: optionalNumber(obj, 'spill', DEFAULT_KEY_CONTROLS.spill, 0, 100),
+    choke: optionalNumber(obj, 'choke', DEFAULT_KEY_CONTROLS.choke, 0, 100),
+  };
+}
+
+/** Keying presets saved before the real keyer existed open as the keyer. */
+function keyerForLegacyLibraryId(libraryId: string): VideoEffect | null {
+  const tail = libraryId.split('/').pop() ?? '';
+  if (tail === 'keying-blue-screen-key') return defaultChromaKey(KEY_COLOR_PRESETS.blue);
+  if (tail === 'keying-luma-key') return { kind: 'luma-key', threshold: 15, softness: 10, invert: false };
+  const greenKeys = [
+    'keying-chroma-key',
+    'keying-green-screen-key',
+    'keying-ultra-key',
+    'keying-color-key',
+    'keying-rgb-difference-key',
+    'keying-non-red-key',
+  ];
+  if (greenKeys.includes(tail)) {
+    return defaultChromaKey(KEY_COLOR_PRESETS.green);
+  }
+  return null;
+}
+
+function optionalUnit(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : null;
+}
+
 function parseVideoEffect(value: unknown, path: string): VideoEffect {
   const obj = readObject(value, path);
   const kind = readEnum(obj, 'kind', `${path}.kind`, [...VIDEO_EFFECT_KINDS]);
@@ -209,12 +259,39 @@ function parseVideoEffect(value: unknown, path: string): VideoEffect {
     case 'brightness':
     case 'contrast':
     case 'saturation':
-    case 'sharpen':
       return { kind, amount: readNumber(obj, 'amount', path) };
+    case 'sharpen':
+      return { kind, amount: readNumber(obj, 'amount', path), radius: optionalNumber(obj, 'radius', 1, 0.5, 5) };
     case 'hue-rotate':
       return { kind, degrees: readNumber(obj, 'degrees', path) };
     case 'vignette':
-      return { kind, amount: readNumber(obj, 'amount', path) };
+      return {
+        kind,
+        amount: readNumber(obj, 'amount', path),
+        size: optionalNumber(obj, 'size', 50, 0, 100),
+        feather: optionalNumber(obj, 'feather', 50, 0, 100),
+      };
+    case 'chroma-key':
+      return { kind, view: obj.view === 'matte' ? 'matte' : 'final', ...parseKeyControls(obj) };
+    case 'luma-key':
+      return {
+        kind,
+        threshold: optionalNumber(obj, 'threshold', 15, 0, 100),
+        softness: optionalNumber(obj, 'softness', 10, 0, 100),
+        invert: obj.invert === true,
+      };
+    case 'screen-replace':
+      return {
+        kind,
+        sourceAssetId: typeof obj.sourceAssetId === 'string' ? obj.sourceAssetId : null,
+        fit:
+          typeof obj.fit === 'string' && (SCREEN_REPLACE_FITS as readonly string[]).includes(obj.fit)
+            ? (obj.fit as ScreenReplaceFit)
+            : 'corners',
+        seedX: optionalUnit(obj.seedX),
+        seedY: optionalUnit(obj.seedY),
+        ...parseKeyControls(obj),
+      };
     case 'crop':
       return {
         kind,
@@ -231,12 +308,12 @@ function parseVideoEffect(value: unknown, path: string): VideoEffect {
         brightness: readNumber(obj, 'brightness', path),
         contrast: readNumber(obj, 'contrast', path),
       };
-    case 'library':
-      return {
-        kind,
-        libraryId: readString(obj, 'libraryId', path),
-        amount: obj.amount === undefined ? 100 : readNumber(obj, 'amount', path),
-      };
+    case 'library': {
+      const libraryId = readString(obj, 'libraryId', path);
+      const keyer = keyerForLegacyLibraryId(libraryId);
+      if (keyer) return keyer;
+      return { kind, libraryId, amount: obj.amount === undefined ? 100 : readNumber(obj, 'amount', path) };
+    }
     default:
       throw invalid(path, 'a supported video effect');
   }
@@ -244,21 +321,28 @@ function parseVideoEffect(value: unknown, path: string): VideoEffect {
 
 function parseAudioEffect(value: unknown, path: string): AudioEffect {
   const obj = readObject(value, path);
-  const kind = readEnum(obj, 'kind', `${path}.kind`, [
-    'gain',
-    'highpass',
-    'lowpass',
-    'compressor',
-    'noise-gate',
-    'limiter',
-    'pitch',
-  ]);
+  const kind = readEnum(obj, 'kind', `${path}.kind`, [...AUDIO_EFFECT_KINDS]);
   switch (kind) {
     case 'gain':
       return { kind, gainDb: readNumber(obj, 'gainDb', path) };
     case 'highpass':
     case 'lowpass':
-      return { kind, frequencyHz: readNumber(obj, 'frequencyHz', path) };
+      return {
+        kind,
+        frequencyHz: readNumber(obj, 'frequencyHz', path),
+        q: optionalNumber(obj, 'q', AUDIO_EFFECT_DEFAULTS.highpassQ, 0.1, 18),
+      };
+    case 'eq':
+      return {
+        kind,
+        lowGainDb: optionalNumber(obj, 'lowGainDb', 0, -24, 24),
+        lowFrequencyHz: optionalNumber(obj, 'lowFrequencyHz', 120, 20, 1000),
+        midGainDb: optionalNumber(obj, 'midGainDb', 0, -24, 24),
+        midFrequencyHz: optionalNumber(obj, 'midFrequencyHz', 1000, 100, 10_000),
+        midQ: optionalNumber(obj, 'midQ', 1, 0.1, 18),
+        highGainDb: optionalNumber(obj, 'highGainDb', 0, -24, 24),
+        highFrequencyHz: optionalNumber(obj, 'highFrequencyHz', 8000, 1000, 20_000),
+      };
     case 'compressor':
       return {
         kind,
@@ -266,11 +350,37 @@ function parseAudioEffect(value: unknown, path: string): AudioEffect {
         ratio: readNumber(obj, 'ratio', path),
         attackMs: readNumber(obj, 'attackMs', path),
         releaseMs: readNumber(obj, 'releaseMs', path),
+        kneeDb: optionalNumber(obj, 'kneeDb', AUDIO_EFFECT_DEFAULTS.compressorKneeDb, 0, 40),
+        makeupDb: optionalNumber(obj, 'makeupDb', 0, 0, 24),
       };
     case 'noise-gate':
-      return { kind, thresholdDb: readNumber(obj, 'thresholdDb', path) };
+      return {
+        kind,
+        thresholdDb: readNumber(obj, 'thresholdDb', path),
+        rangeDb: optionalNumber(obj, 'rangeDb', AUDIO_EFFECT_DEFAULTS.gateRangeDb, -80, 0),
+        attackMs: optionalNumber(obj, 'attackMs', AUDIO_EFFECT_DEFAULTS.gateAttackMs, 0, 200),
+        releaseMs: optionalNumber(obj, 'releaseMs', AUDIO_EFFECT_DEFAULTS.gateReleaseMs, 5, 2000),
+      };
     case 'limiter':
-      return { kind, ceilingDb: readNumber(obj, 'ceilingDb', path) };
+      return {
+        kind,
+        ceilingDb: readNumber(obj, 'ceilingDb', path),
+        releaseMs: optionalNumber(obj, 'releaseMs', AUDIO_EFFECT_DEFAULTS.limiterReleaseMs, 1, 1000),
+      };
+    case 'delay':
+      return {
+        kind,
+        timeMs: optionalNumber(obj, 'timeMs', 250, 1, 2000),
+        feedback: optionalNumber(obj, 'feedback', 35, 0, 90),
+        mix: optionalNumber(obj, 'mix', 30, 0, 100),
+      };
+    case 'reverb':
+      return {
+        kind,
+        size: optionalNumber(obj, 'size', 50, 0, 100),
+        damping: optionalNumber(obj, 'damping', 40, 0, 100),
+        mix: optionalNumber(obj, 'mix', 25, 0, 100),
+      };
     case 'pitch':
       return { kind, amount: Math.max(-100, Math.min(100, readNumber(obj, 'amount', path))) };
     default:
@@ -326,6 +436,11 @@ function parseClipText(value: unknown, path: string): ClipText {
     outlineColor: obj.outlineColor === undefined ? DEFAULT_CLIP_TEXT.outlineColor : readString(obj, 'outlineColor', path),
     backgroundColor: obj.backgroundColor == null ? null : readString(obj, 'backgroundColor', path),
     animation,
+    outAnimation:
+      typeof obj.outAnimation === 'string' && (TEXT_ANIMATION_IDS as readonly string[]).includes(obj.outAnimation)
+        ? (obj.outAnimation as ClipText['outAnimation'])
+        : DEFAULT_CLIP_TEXT.outAnimation,
+    outAnimationFrames: optionalNumber(obj, 'outAnimationFrames', DEFAULT_CLIP_TEXT.outAnimationFrames, 1),
   };
 }
 

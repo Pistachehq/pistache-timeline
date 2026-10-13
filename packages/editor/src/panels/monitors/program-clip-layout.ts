@@ -1,4 +1,5 @@
 import {
+  BLUR_REFERENCE_HEIGHT,
   clipPathFromVideoEffects,
   clipTransitionPaint,
   cssFilterFromVideoEffects,
@@ -75,8 +76,12 @@ export function programClipWrapperStyle(
   const sx = t.scaleX / 100;
   const sy = t.scaleY / 100;
   const paint = clipTransitionPaint(clip, sequenceFrame);
-  const filter = [cssFilterFromVideoEffects(clip.effects.video), paint.filter].filter(Boolean).join(' ');
-  const effectPath = clipPathFromVideoEffects(clip.effects.video) ?? libraryEffectClipPath(clip.effects.video);
+  const filter = [cssFilterFromVideoEffects(clip.effects.video, frameHeight / BLUR_REFERENCE_HEIGHT), paint.filter]
+    .filter(Boolean)
+    .join(' ');
+  const pixelScale = frameHeight > 0 ? frameHeight / seq.height : 1;
+  const effectPath =
+    clipPathFromVideoEffects(clip.effects.video, pixelScale) ?? libraryEffectClipPath(clip.effects.video);
   const clipPath = paint.clipPath ?? effectPath;
   const extraTransform = [libraryEffectTransform(clip.effects.video), paint.transform].filter(Boolean).join(' ');
   return {

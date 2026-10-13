@@ -1,4 +1,8 @@
 import {
+  AUDIO_EFFECT_DEFAULTS,
+  defaultChromaKey,
+  defaultScreenReplace,
+  KEY_COLOR_PRESETS,
   type AudioFadeCurve,
   type AudioEffect,
   TEXT_ANIMATION_IDS,
@@ -41,7 +45,7 @@ export const EFFECT_CATEGORIES: readonly EffectCategory[] = [
   {
     id: 'video-effects',
     name: 'Video effects',
-    description: 'Blur, color, sharpen, and rounded corners.',
+    description: 'Keying, screen replace, blur, color, sharpen, and vignette.',
   },
   {
     id: 'audio-transitions',
@@ -51,7 +55,7 @@ export const EFFECT_CATEGORIES: readonly EffectCategory[] = [
   {
     id: 'audio-effects',
     name: 'Audio effects',
-    description: 'Gain, EQ, compression, gate, and limiter.',
+    description: 'Gain, EQ, dynamics, delay, reverb, and pitch.',
   },
   {
     id: 'text-transitions',
@@ -62,13 +66,13 @@ export const EFFECT_CATEGORIES: readonly EffectCategory[] = [
 
 const DEFAULT_TRANSITION_FRAMES = 15;
 
-function transitionIn(
-  videoKind: VideoTransitionKind,
-  audioCurve: AudioFadeCurve,
-  name: string,
-): EffectLibraryEntry {
+/**
+ * One entry per transition. Where it lands (head or tail) follows the drop
+ * position on the clip, so there is no separate "in" and "out" preset.
+ */
+function videoTransition(videoKind: VideoTransitionKind, name: string): EffectLibraryEntry {
   return {
-    id: `vin-${videoKind}-${audioCurve}`,
+    id: `vtr-${videoKind}`,
     name,
     categoryId: 'video-transitions',
     folderPath: 'video-transitions',
@@ -76,35 +80,15 @@ function transitionIn(
       kind: 'transition-in',
       videoKind,
       libraryId: null,
-      audioCurve,
+      audioCurve: 'constant-power',
       durationFrames: DEFAULT_TRANSITION_FRAMES,
     },
   };
 }
 
-function transitionOut(
-  videoKind: VideoTransitionKind,
-  audioCurve: AudioFadeCurve,
-  name: string,
-): EffectLibraryEntry {
+function audioTransition(audioCurve: AudioFadeCurve, name: string): EffectLibraryEntry {
   return {
-    id: `vout-${videoKind}-${audioCurve}`,
-    name,
-    categoryId: 'video-transitions',
-    folderPath: 'video-transitions',
-    payload: {
-      kind: 'transition-out',
-      videoKind,
-      libraryId: null,
-      audioCurve,
-      durationFrames: DEFAULT_TRANSITION_FRAMES,
-    },
-  };
-}
-
-function audioTransitionIn(audioCurve: AudioFadeCurve, name: string): EffectLibraryEntry {
-  return {
-    id: `ain-${audioCurve}`,
+    id: `atr-${audioCurve}`,
     name,
     categoryId: 'audio-transitions',
     folderPath: 'audio-transitions',
@@ -119,29 +103,12 @@ function audioTransitionIn(audioCurve: AudioFadeCurve, name: string): EffectLibr
   };
 }
 
-function audioTransitionOut(audioCurve: AudioFadeCurve, name: string): EffectLibraryEntry {
-  return {
-    id: `aout-${audioCurve}`,
-    name,
-    categoryId: 'audio-transitions',
-    folderPath: 'audio-transitions',
-    payload: {
-      kind: 'transition-out',
-      videoKind: 'fade',
-      libraryId: `audio-transitions/${audioCurve}`,
-      audioCurve,
-      durationFrames: DEFAULT_TRANSITION_FRAMES,
-      affectsVideo: false,
-    },
-  };
-}
-
-function videoFx(id: string, effect: VideoEffect, name: string): EffectLibraryEntry {
+function videoFx(id: string, effect: VideoEffect, name: string, folder?: string): EffectLibraryEntry {
   return {
     id: `vfx-${id}`,
     name,
     categoryId: 'video-effects',
-    folderPath: 'video-effects',
+    folderPath: folder ? `video-effects/${folder}` : 'video-effects',
     payload: { kind: 'video-effect', effect },
   };
 }
@@ -167,41 +134,58 @@ const TEXT_TRANSITION_LIBRARY: readonly EffectLibraryEntry[] = TEXT_ANIMATION_ID
 }));
 
 const CORE_EFFECT_LIBRARY: readonly EffectLibraryEntry[] = [
-  transitionIn('fade', 'constant-power', 'Fade in'),
-  transitionOut('fade', 'constant-power', 'Fade out'),
-  transitionIn('dip-black', 'constant-power', 'Dip to black in'),
-  transitionOut('dip-black', 'constant-power', 'Dip to black out'),
-  transitionIn('cross-dissolve', 'constant-power', 'Cross dissolve in'),
-  transitionOut('cross-dissolve', 'constant-power', 'Cross dissolve out'),
+  videoTransition('fade', 'Fade'),
+  videoTransition('dip-black', 'Dip to black'),
+  videoTransition('cross-dissolve', 'Cross dissolve'),
 
   videoFx('blur', { kind: 'blur', amount: 30, region: null }, 'Blur'),
-  videoFx('brightness', { kind: 'brightness', amount: 0 }, 'Brightness'),
+  videoFx('brightness', { kind: 'brightness', amount: 15 }, 'Brightness'),
   videoFx('contrast', { kind: 'contrast', amount: 20 }, 'Contrast'),
   videoFx('saturation', { kind: 'saturation', amount: 25 }, 'Saturation'),
   videoFx('hue', { kind: 'hue-rotate', degrees: 25 }, 'Hue rotate'),
-  videoFx('vignette', { kind: 'vignette', amount: 40 }, 'Vignette'),
-  videoFx('sharpen', { kind: 'sharpen', amount: 30 }, 'Sharpen'),
-  videoFx('round', { kind: 'round-corners', radius: 24 }, 'Round corners'),
+  videoFx('vignette', { kind: 'vignette', amount: 45, size: 50, feather: 60 }, 'Vignette'),
+  videoFx('sharpen', { kind: 'sharpen', amount: 40, radius: 1 }, 'Sharpen'),
+  videoFx('round', { kind: 'round-corners', radius: 48 }, 'Round corners'),
+  videoFx('chroma-green', defaultChromaKey(KEY_COLOR_PRESETS.green), 'Chroma Key (green screen)', 'Keying'),
+  videoFx('chroma-blue', defaultChromaKey(KEY_COLOR_PRESETS.blue), 'Chroma Key (blue screen)', 'Keying'),
+  videoFx('screen-replace', defaultScreenReplace(KEY_COLOR_PRESETS.green), 'Screen Replace', 'Keying'),
+  videoFx('luma-key', { kind: 'luma-key', threshold: 15, softness: 10, invert: false }, 'Luma Key', 'Keying'),
 
-  audioTransitionIn('linear', 'Fade in (linear)'),
-  audioTransitionIn('constant-power', 'Fade in (constant power)'),
-  audioTransitionIn('exponential', 'Fade in (exponential)'),
-  audioTransitionIn('logarithmic', 'Fade in (logarithmic)'),
-  audioTransitionOut('linear', 'Fade out (linear)'),
-  audioTransitionOut('constant-power', 'Fade out (constant power)'),
-  audioTransitionOut('exponential', 'Fade out (exponential)'),
-  audioTransitionOut('logarithmic', 'Fade out (logarithmic)'),
+  audioTransition('constant-power', 'Constant power'),
+  audioTransition('linear', 'Linear fade'),
+  audioTransition('exponential', 'Exponential fade'),
+  audioTransition('logarithmic', 'Logarithmic fade'),
 
   audioFx('gain', { kind: 'gain', gainDb: 0 }, 'Gain'),
-  audioFx('highpass', { kind: 'highpass', frequencyHz: 100 }, 'High-pass'),
-  audioFx('lowpass', { kind: 'lowpass', frequencyHz: 8000 }, 'Low-pass'),
+  audioFx('highpass', { kind: 'highpass', frequencyHz: 100, q: AUDIO_EFFECT_DEFAULTS.highpassQ }, 'High-pass'),
+  audioFx('lowpass', { kind: 'lowpass', frequencyHz: 8000, q: AUDIO_EFFECT_DEFAULTS.highpassQ }, 'Low-pass'),
+  audioFx(
+    'eq',
+    {
+      kind: 'eq',
+      lowGainDb: 0,
+      lowFrequencyHz: 120,
+      midGainDb: 0,
+      midFrequencyHz: 1000,
+      midQ: 1,
+      highGainDb: 0,
+      highFrequencyHz: 8000,
+    },
+    'Parametric EQ',
+  ),
   audioFx(
     'compressor',
-    { kind: 'compressor', thresholdDb: -18, ratio: 3, attackMs: 10, releaseMs: 120 },
+    { kind: 'compressor', thresholdDb: -18, ratio: 3, attackMs: 10, releaseMs: 120, kneeDb: 6, makeupDb: 0 },
     'Compressor',
   ),
-  audioFx('gate', { kind: 'noise-gate', thresholdDb: -45 }, 'Noise gate'),
-  audioFx('limiter', { kind: 'limiter', ceilingDb: -1 }, 'Limiter'),
+  audioFx(
+    'gate',
+    { kind: 'noise-gate', thresholdDb: -45, rangeDb: -80, attackMs: 2, releaseMs: 120 },
+    'Noise gate',
+  ),
+  audioFx('limiter', { kind: 'limiter', ceilingDb: -1, releaseMs: 50 }, 'Limiter'),
+  audioFx('delay', { kind: 'delay', timeMs: 250, feedback: 35, mix: 30 }, 'Delay'),
+  audioFx('reverb', { kind: 'reverb', size: 50, damping: 40, mix: 25 }, 'Reverb'),
   audioFx('pitch', { kind: 'pitch', amount: 0 }, 'Pitch'),
 ];
 

@@ -1,6 +1,7 @@
 import {
   applyStereoPan,
   audioEffectGainDb,
+  audioEffectsNeedRendering,
   clipPitchAmount,
   clipSpeedPercent,
   clipTransitionAudioMultiplier,
@@ -9,6 +10,7 @@ import {
   findTrack,
   framesToSeconds,
   getAudibleClipsAt,
+  getClipEnd,
   getSequenceDuration,
   pitchRatioFromAmount,
   pitchWetMix,
@@ -21,6 +23,7 @@ import {
 } from '@timeline/core';
 import { TimelineError, throwIfAborted } from '@timeline/shared';
 import { type ExportOptions } from '../../types';
+import { renderAudioEffects } from '../effects/audio-chain';
 import { audioEncoderSupported } from './export-codecs';
 import { decodeAudioFromHandle } from './decode-audio';
 import { type BrowserExportContext } from './export-context';
@@ -148,6 +151,45 @@ export async function mixSequenceAudio(
   const right = new Float32Array(totalSamples);
   const pitchPhase = new Map<string, number>();
 
+  const drySample = (clip: Clip, buffer: AudioBuffer, t: number): [number, number] => {
+    const sourceSeconds = sourceSecondsForClip(clip, t, sequence.frameRate);
+    const pitchAmount = clipPitchAmount(clip.effects.audio);
+    const wet = pitchWetMix(pitchAmount);
+    if (wet === 0) return stereoSample(buffer, sourceSeconds);
+    const pitched = pitchedStereo(buffer, sourceSeconds, pitchRatioFromAmount(pitchAmount), pitchPhase.get(clip.id) ?? 0);
+    pitchPhase.set(clip.id, pitched.phase);
+    if (wet >= 1) return pitched.sample;
+    const dry = stereoSample(buffer, sourceSeconds);
+    const wetGain = Math.sin(wet * Math.PI * 0.5);
+    const dryGain = Math.cos(wet * Math.PI * 0.5);
+    return [dry[0] * dryGain + pitched.sample[0] * wetGain, dry[1] * dryGain + pitched.sample[1] * wetGain];
+  };
+
+  /** Clips with EQ, dynamics, delay or reverb are rendered whole first, so filters keep their state. */
+  const processed = new Map<string, { readonly start: number; readonly left: Float32Array; readonly right: Float32Array }>();
+  for (const clip of Object.values(sequence.clips)) {
+    throwIfAborted(signal);
+    if (!clip.assetId || !clip.enabled || !audioEffectsNeedRendering(clip.effects.audio)) continue;
+    const buffer = buffers.get(clip.assetId);
+    if (!buffer) continue;
+    const start = Math.max(0, Math.round(framesToSeconds(clip.start, sequence.frameRate) * EXPORT_AUDIO_SAMPLE_RATE));
+    const end = Math.min(
+      totalSamples,
+      Math.round(framesToSeconds(getClipEnd(clip), sequence.frameRate) * EXPORT_AUDIO_SAMPLE_RATE),
+    );
+    if (end <= start) continue;
+    const dryLeft = new Float32Array(end - start);
+    const dryRight = new Float32Array(end - start);
+    for (let i = 0; i < dryLeft.length; i++) {
+      const [l, r] = drySample(clip, buffer, (start + i) / EXPORT_AUDIO_SAMPLE_RATE);
+      dryLeft[i] = l;
+      dryRight[i] = r;
+    }
+    pitchPhase.delete(clip.id);
+    const rendered = await renderAudioEffects(dryLeft, dryRight, EXPORT_AUDIO_SAMPLE_RATE, clip.effects.audio);
+    processed.set(clip.id, { start, left: rendered.left, right: rendered.right });
+  }
+
   for (let sample = 0; sample < totalSamples; sample++) {
     throwIfAborted(signal);
     if (sample > 0 && sample % EXPORT_AUDIO_SAMPLE_RATE === 0) {
@@ -165,25 +207,15 @@ export async function mixSequenceAudio(
       if (!clip.assetId) continue;
       const buffer = buffers.get(clip.assetId);
       if (!buffer) continue;
-      const sourceSeconds = sourceSecondsForClip(clip, t, sequence.frameRate);
-      const pitchAmount = clipPitchAmount(clip.effects.audio);
-      const wet = pitchWetMix(pitchAmount);
+      const pre = processed.get(clip.id);
       let sl: number;
       let sr: number;
-      if (wet === 0) {
-        [sl, sr] = stereoSample(buffer, sourceSeconds);
+      if (pre) {
+        const at = sample - pre.start;
+        sl = pre.left[at] ?? 0;
+        sr = pre.right[at] ?? 0;
       } else {
-        const pitched = pitchedStereo(buffer, sourceSeconds, pitchRatioFromAmount(pitchAmount), pitchPhase.get(clip.id) ?? 0);
-        pitchPhase.set(clip.id, pitched.phase);
-        if (wet >= 1) {
-          [sl, sr] = pitched.sample;
-        } else {
-          const dry = stereoSample(buffer, sourceSeconds);
-          const wetGain = Math.sin(wet * Math.PI * 0.5);
-          const dryGain = Math.cos(wet * Math.PI * 0.5);
-          sl = dry[0] * dryGain + pitched.sample[0] * wetGain;
-          sr = dry[1] * dryGain + pitched.sample[1] * wetGain;
-        }
+        [sl, sr] = drySample(clip, buffer, t);
       }
       const [gl, gr] = applyClipGain(sl, sr, clip, sequence, seqFrame);
       l += gl;
