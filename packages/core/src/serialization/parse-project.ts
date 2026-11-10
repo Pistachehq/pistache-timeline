@@ -6,9 +6,12 @@ import {
   DEFAULT_CLIP_EFFECTS,
   DEFAULT_CLIP_TRANSITIONS,
   DEFAULT_KEY_CONTROLS,
+  DEFAULT_SMART_BACKGROUND,
   defaultChromaKey,
   KEY_COLOR_PRESETS,
   SCREEN_REPLACE_FITS,
+  SMART_BACKGROUND_QUALITIES,
+  SMART_BACKGROUND_VIEWS,
   VIDEO_EFFECT_KINDS,
   VIDEO_TRANSITION_KINDS,
   type AudioEffect,
@@ -18,6 +21,11 @@ import {
   type EffectRegion,
   type KeyControls,
   type ScreenReplaceFit,
+  type SmartBackgroundBox,
+  type SmartBackgroundPoint,
+  type SmartBackgroundQuality,
+  type SmartBackgroundStroke,
+  type SmartBackgroundView,
   type VideoEffect,
 } from '../model/effects';
 import { clipSpeedPercent } from '../model/speed';
@@ -250,6 +258,95 @@ function optionalUnit(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : null;
 }
 
+function parseUnitPoint(value: unknown, path: string): { u: number; v: number } {
+  const obj = readObject(value, path);
+  return { u: optionalNumber(obj, 'u', 0.5, 0, 1), v: optionalNumber(obj, 'v', 0.5, 0, 1) };
+}
+
+function parseSmartPoints(value: unknown, path: string): readonly SmartBackgroundPoint[] {
+  if (!Array.isArray(value)) return [];
+  const points: SmartBackgroundPoint[] = [];
+  for (let i = 0; i < value.length; i++) {
+    const obj = readObject(value[i], `${path}[${i}]`);
+    const uv = parseUnitPoint(obj, `${path}[${i}]`);
+    points.push({
+      id: typeof obj.id === 'string' && obj.id ? obj.id : `pt${i}`,
+      u: uv.u,
+      v: uv.v,
+      include: obj.include !== false,
+      sourceFrame: Math.max(0, Math.round(optionalNumber(obj, 'sourceFrame', 0, 0, 10_000_000))),
+    });
+  }
+  return points;
+}
+
+function parseSmartBoxes(value: unknown, path: string): readonly SmartBackgroundBox[] {
+  if (!Array.isArray(value)) return [];
+  const boxes: SmartBackgroundBox[] = [];
+  for (let i = 0; i < value.length; i++) {
+    const obj = readObject(value[i], `${path}[${i}]`);
+    const uv = parseUnitPoint(obj, `${path}[${i}]`);
+    boxes.push({
+      id: typeof obj.id === 'string' && obj.id ? obj.id : `bx${i}`,
+      u: uv.u,
+      v: uv.v,
+      w: optionalNumber(obj, 'w', 0.1, 0.001, 1),
+      h: optionalNumber(obj, 'h', 0.1, 0.001, 1),
+      include: obj.include !== false,
+      sourceFrame: Math.max(0, Math.round(optionalNumber(obj, 'sourceFrame', 0, 0, 10_000_000))),
+    });
+  }
+  return boxes;
+}
+
+function parseSmartStrokes(value: unknown, path: string): readonly SmartBackgroundStroke[] {
+  if (!Array.isArray(value)) return [];
+  const strokes: SmartBackgroundStroke[] = [];
+  for (let i = 0; i < value.length; i++) {
+    const obj = readObject(value[i], `${path}[${i}]`);
+    const rawPoints = Array.isArray(obj.points) ? obj.points : [];
+    const points = rawPoints.slice(0, 256).map((item, index) => parseUnitPoint(item, `${path}[${i}].points[${index}]`));
+    strokes.push({
+      id: typeof obj.id === 'string' && obj.id ? obj.id : `sk${i}`,
+      include: obj.include !== false,
+      radius: optionalNumber(obj, 'radius', 0.02, 0.002, 0.2),
+      sourceFrame: Math.max(0, Math.round(optionalNumber(obj, 'sourceFrame', 0, 0, 10_000_000))),
+      points,
+    });
+  }
+  return strokes;
+}
+
+function parseSmartBackground(obj: JsonObject, path: string): VideoEffect {
+  const view =
+    typeof obj.view === 'string' && (SMART_BACKGROUND_VIEWS as readonly string[]).includes(obj.view)
+      ? (obj.view as SmartBackgroundView)
+      : DEFAULT_SMART_BACKGROUND.view;
+  const quality =
+    typeof obj.quality === 'string' && (SMART_BACKGROUND_QUALITIES as readonly string[]).includes(obj.quality)
+      ? (obj.quality as SmartBackgroundQuality)
+      : DEFAULT_SMART_BACKGROUND.quality;
+  return {
+    kind: 'smart-background',
+    view,
+    invert: obj.invert === true,
+    feather: optionalNumber(obj, 'feather', DEFAULT_SMART_BACKGROUND.feather, 0, 100),
+    expansion: optionalNumber(obj, 'expansion', DEFAULT_SMART_BACKGROUND.expansion, -100, 100),
+    smoothing: optionalNumber(obj, 'smoothing', DEFAULT_SMART_BACKGROUND.smoothing, 0, 100),
+    threshold: optionalNumber(obj, 'threshold', DEFAULT_SMART_BACKGROUND.threshold, 0, 100),
+    temporalStability: optionalNumber(obj, 'temporalStability', DEFAULT_SMART_BACKGROUND.temporalStability, 0, 100),
+    preserveShadows: obj.preserveShadows !== false,
+    keepPrompt: typeof obj.keepPrompt === 'string' ? obj.keepPrompt.slice(0, 500) : '',
+    removePrompt: typeof obj.removePrompt === 'string' ? obj.removePrompt.slice(0, 500) : '',
+    quality,
+    cacheId: typeof obj.cacheId === 'string' ? obj.cacheId.slice(0, 80) : '',
+    points: parseSmartPoints(obj.points, `${path}.points`),
+    boxes: parseSmartBoxes(obj.boxes, `${path}.boxes`),
+    strokes: parseSmartStrokes(obj.strokes, `${path}.strokes`),
+    split: optionalNumber(obj, 'split', DEFAULT_SMART_BACKGROUND.split, 0, 100),
+  };
+}
+
 function parseVideoEffect(value: unknown, path: string): VideoEffect {
   const obj = readObject(value, path);
   const kind = readEnum(obj, 'kind', `${path}.kind`, [...VIDEO_EFFECT_KINDS]);
@@ -292,6 +389,8 @@ function parseVideoEffect(value: unknown, path: string): VideoEffect {
         seedY: optionalUnit(obj.seedY),
         ...parseKeyControls(obj),
       };
+    case 'smart-background':
+      return parseSmartBackground(obj, path);
     case 'crop':
       return {
         kind,

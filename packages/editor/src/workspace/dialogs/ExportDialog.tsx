@@ -1,4 +1,5 @@
-import { formatDisplayTime, formatFrameRate, getSequenceDuration } from '@timeline/core';
+import { formatDisplayTime, formatFrameRate, getSequenceDuration, type ClipId } from '@timeline/core';
+import { resolveExportMask } from '../../segmentation/ensure-mask';
 import { type ExportProgress } from '@timeline/media';
 import { isAbortError, toErrorMessage } from '@timeline/shared';
 import { Button, Dialog, Select } from '@timeline/ui';
@@ -122,6 +123,12 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
         {
           signal: controller.signal,
           onProgress: setProgress,
+          resolveSmartMask: (clipId, sequenceFrame) => {
+            const seq = runtime.stores.project.getState().project.sequences[sequence.id];
+            const clip = seq?.clips[clipId as ClipId];
+            if (!clip) return Promise.resolve(null);
+            return resolveExportMask(clip, sequenceFrame);
+          },
         },
       );
       const how = result.hardwareAccelerated ? ' using the GPU' : '';

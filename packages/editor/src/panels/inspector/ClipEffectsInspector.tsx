@@ -29,6 +29,7 @@ import {
   transitionSelectValue,
 } from '../project/transition-display';
 import { ClipBlurInspector } from './ClipBlurInspector';
+import { SmartBackgroundControls } from './SmartBackgroundInspector';
 import { InspectorSection } from './InspectorSection';
 import { TimelineDurationField } from './TimelineDurationField';
 
@@ -86,6 +87,8 @@ function effectTitle(effect: VideoEffect | AudioEffect): string {
       return 'Luma Key';
     case 'screen-replace':
       return 'Screen Replace';
+    case 'smart-background':
+      return 'Smart Background Removal';
     case 'eq':
       return 'Parametric EQ';
     case 'delay':
@@ -221,6 +224,8 @@ function videoFields(effect: VideoEffect): readonly FieldSpec<VideoEffect>[] {
       ]);
     case 'luma-key':
       return cast<'luma-key'>([field('threshold', 'Threshold', 0, 100), field('softness', 'Softness', 0, 100)]);
+    case 'smart-background':
+      return [];
     case 'library':
       return cast<'library'>([field('amount', 'Amount', 0, 200)]);
     default:
@@ -476,6 +481,22 @@ function VideoEffectRow({
             onValueChange={(view) => onChange({ ...effect, view })}
           />
         </div>
+      </EffectCard>
+    );
+  }
+
+  if (effect.kind === 'smart-background') {
+    return (
+      <EffectCard title="Smart Background Removal" props={props}>
+        <SmartBackgroundControls
+          clip={clip}
+          effectIndex={effectIndex}
+          effect={effect}
+          disabled={disabled}
+          onChange={onChange}
+          onScrubStart={props.onScrubStart}
+          onScrubEnd={props.onScrubEnd}
+        />
       </EffectCard>
     );
   }

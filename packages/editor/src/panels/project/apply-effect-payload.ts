@@ -13,6 +13,7 @@ import {
   updateClipText,
   updateClipTransitions,
 } from '@timeline/core';
+import { createId } from '@timeline/shared';
 import { type EffectLibraryPayload } from '../dnd';
 
 function edgeFromPayload(payload: EffectLibraryPayload): ClipEdgeTransition {
@@ -50,11 +51,16 @@ export function applyEffectPayloadToClip(
       if (!next || edge.videoKind !== 'cross-dissolve' || edge.affectsVideo === false) return next;
       return pairCrossDissolve(next, sequenceId, clip.id, side, edge) ?? next;
     }
-    case 'video-effect':
+    case 'video-effect': {
+      const effect =
+        payload.effect.kind === 'smart-background' && !payload.effect.cacheId
+          ? { ...payload.effect, cacheId: createId('sbg') }
+          : payload.effect;
       return applyEffects(project, sequenceId, clip, {
-        video: [...clip.effects.video, payload.effect],
+        video: [...clip.effects.video, effect],
         audio: [...clip.effects.audio],
       });
+    }
     case 'audio-effect':
       return applyEffects(project, sequenceId, clip, {
         video: [...clip.effects.video],
@@ -155,7 +161,7 @@ export function effectPayloadMatchesTrack(
   }
 }
 
-const KEYER_KINDS: ReadonlySet<string> = new Set(['chroma-key', 'luma-key', 'screen-replace']);
+const KEYER_KINDS: ReadonlySet<string> = new Set(['chroma-key', 'luma-key', 'screen-replace', 'smart-background']);
 
 /** Text transitions only land on text clips. Audio presets and keyers skip text clips. */
 export function effectPayloadMatchesClip(

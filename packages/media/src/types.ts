@@ -119,9 +119,17 @@ export interface ExportProgress {
   readonly progress: number;
 }
 
+export interface SmartMaskFrame {
+  readonly data: Uint8Array;
+  readonly width: number;
+  readonly height: number;
+}
+
 export interface ExportOptions {
   readonly onProgress?: (progress: ExportProgress) => void;
   readonly signal?: AbortSignal;
+  /** Semantic keep-mask for a clip at a sequence frame. Missing means “not analysed yet”. */
+  readonly resolveSmartMask?: (clipId: string, sequenceFrame: number) => Promise<SmartMaskFrame | null>;
 }
 
 export interface ExportResult {

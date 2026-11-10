@@ -100,6 +100,15 @@ export interface KeyColorPick {
   readonly effectIndex: number;
 }
 
+export const SMART_PICK_MODES = ['include', 'exclude', 'box-include', 'box-exclude', 'brush-add', 'brush-subtract'] as const;
+export type SmartPickMode = (typeof SMART_PICK_MODES)[number];
+
+export interface SmartBackgroundPick {
+  readonly clipId: ClipId;
+  readonly effectIndex: number;
+  readonly mode: SmartPickMode;
+}
+
 export type DialogState =
   | { readonly kind: 'export' }
   | { readonly kind: 'sequence-settings' }
@@ -148,6 +157,8 @@ export interface UiState {
   readonly textEditingClipId: ClipId | null;
   /** Eyedropper: the next click on this clip in the Program monitor sets the key color of that effect. */
   readonly keyColorPick: KeyColorPick | null;
+  /** Point, box or brush selection for Smart Background Removal. */
+  readonly smartBackgroundPick: SmartBackgroundPick | null;
   /** Folder/asset ids playing a short enter animation in the media bin. */
   readonly mediaBinPopInIds: readonly string[];
   /** Audio track currently recording a voice over, if any. */
@@ -185,6 +196,7 @@ export interface UiState {
   setClipBlurEditId(clipId: ClipId | null): void;
   setTextEditingClipId(clipId: ClipId | null): void;
   setKeyColorPick(pick: KeyColorPick | null): void;
+  setSmartBackgroundPick(pick: SmartBackgroundPick | null): void;
   flashMediaBinPopIn(ids: readonly string[]): void;
   setVoiceOverTrackId(trackId: TrackId | null): void;
   requestZoomFit(): void;
@@ -221,6 +233,7 @@ export function createUiStore(): UiStore {
     clipBlurEditId: null,
     textEditingClipId: null,
     keyColorPick: null,
+    smartBackgroundPick: null,
     mediaBinPopInIds: [],
     voiceOverTrackId: null,
     zoomFitNonce: 0,
@@ -312,7 +325,9 @@ export function createUiStore(): UiStore {
     setClipBlurEditId: (clipBlurEditId) =>
       set({ clipBlurEditId, clipCropEditId: clipBlurEditId ? null : get().clipCropEditId }),
     setTextEditingClipId: (textEditingClipId) => set({ textEditingClipId }),
-    setKeyColorPick: (keyColorPick) => set({ keyColorPick }),
+    setKeyColorPick: (keyColorPick) => set({ keyColorPick, smartBackgroundPick: keyColorPick ? null : get().smartBackgroundPick }),
+    setSmartBackgroundPick: (smartBackgroundPick) =>
+      set({ smartBackgroundPick, keyColorPick: smartBackgroundPick ? null : get().keyColorPick }),
 
     setVoiceOverTrackId: (voiceOverTrackId) => set({ voiceOverTrackId }),
     requestZoomFit: () => set((state) => ({ zoomFitNonce: state.zoomFitNonce + 1 })),

@@ -45,6 +45,7 @@ export const VIDEO_EFFECT_KINDS = [
   'chroma-key',
   'luma-key',
   'screen-replace',
+  'smart-background',
   'library',
 ] as const;
 export type VideoEffectKind = (typeof VIDEO_EFFECT_KINDS)[number];
@@ -105,7 +106,67 @@ export type VideoEffect =
       readonly seedX: number | null;
       readonly seedY: number | null;
     } & KeyControls)
+  /**
+   * Semantic background removal. Keep/remove prompts, points and boxes describe
+   * what CLIPSeg and SAM should retain. Cached masks live outside the project
+   * file and are looked up by `cacheId` plus source frame.
+   */
+  | {
+      readonly kind: 'smart-background';
+      readonly view: SmartBackgroundView;
+      readonly invert: boolean;
+      readonly feather: number;
+      readonly expansion: number;
+      readonly smoothing: number;
+      /** CLIPSeg cutoff 0–100. SAM clicks stay hard keep/remove. */
+      readonly threshold: number;
+      readonly temporalStability: number;
+      readonly preserveShadows: boolean;
+      readonly keepPrompt: string;
+      readonly removePrompt: string;
+      readonly quality: SmartBackgroundQuality;
+      readonly cacheId: string;
+      readonly points: readonly SmartBackgroundPoint[];
+      readonly boxes: readonly SmartBackgroundBox[];
+      readonly strokes: readonly SmartBackgroundStroke[];
+      readonly split: number;
+    }
   | { readonly kind: 'library'; readonly libraryId: string; readonly amount: number };
+
+export const SMART_BACKGROUND_VIEWS = ['result', 'original', 'confidence', 'binary', 'matte', 'overlay', 'split'] as const;
+export type SmartBackgroundView = (typeof SMART_BACKGROUND_VIEWS)[number];
+
+export const SMART_BACKGROUND_QUALITIES = ['preview', 'final'] as const;
+export type SmartBackgroundQuality = (typeof SMART_BACKGROUND_QUALITIES)[number];
+
+/** Click on the clip, in unit coordinates, at a source media frame. */
+export interface SmartBackgroundPoint {
+  readonly id: string;
+  readonly u: number;
+  readonly v: number;
+  readonly include: boolean;
+  readonly sourceFrame: number;
+}
+
+/** Axis-aligned box in unit coordinates. */
+export interface SmartBackgroundBox {
+  readonly id: string;
+  readonly u: number;
+  readonly v: number;
+  readonly w: number;
+  readonly h: number;
+  readonly include: boolean;
+  readonly sourceFrame: number;
+}
+
+/** Manual add/subtract stroke in unit coordinates. */
+export interface SmartBackgroundStroke {
+  readonly id: string;
+  readonly include: boolean;
+  readonly radius: number;
+  readonly sourceFrame: number;
+  readonly points: readonly { readonly u: number; readonly v: number }[];
+}
 
 /** Standard chroma green and blue (Rec. 709 screen paint references). */
 export const KEY_COLOR_PRESETS = {
@@ -137,12 +198,43 @@ export function defaultScreenReplace(color: string = KEY_COLOR_PRESETS.green): V
   };
 }
 
+export const DEFAULT_SMART_BACKGROUND: Omit<VideoEffect & { kind: 'smart-background' }, 'kind' | 'cacheId'> = {
+  view: 'result',
+  invert: false,
+  feather: 4,
+  expansion: 0,
+  smoothing: 10,
+  threshold: 55,
+  temporalStability: 40,
+  preserveShadows: true,
+  keepPrompt: '',
+  removePrompt: '',
+  quality: 'preview',
+  points: [],
+  boxes: [],
+  strokes: [],
+  split: 50,
+};
+
+export function defaultSmartBackground(cacheId: string): VideoEffect {
+  return { kind: 'smart-background', cacheId, ...DEFAULT_SMART_BACKGROUND };
+}
+
+export function smartBackgroundOf(effects: readonly VideoEffect[]): (VideoEffect & { kind: 'smart-background' }) | null {
+  for (let i = effects.length - 1; i >= 0; i--) {
+    const effect = effects[i];
+    if (effect?.kind === 'smart-background') return effect;
+  }
+  return null;
+}
+
 /** Effects drawn per pixel by the keyer instead of a CSS filter. */
 export function isPixelVideoEffect(effect: VideoEffect): boolean {
   return (
     effect.kind === 'chroma-key' ||
     effect.kind === 'luma-key' ||
     effect.kind === 'screen-replace' ||
+    effect.kind === 'smart-background' ||
     (effect.kind === 'sharpen' && effect.amount > 0) ||
     (effect.kind === 'vignette' && effect.amount !== 0)
   );

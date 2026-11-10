@@ -234,6 +234,14 @@ export async function exportSequenceToWebm(
       pixel = {
         renderer: new PixelEffectsRenderer(),
         tracking: new Map(),
+        ...(options.resolveSmartMask
+          ? {
+              resolveSmartMask: async (clip: Clip, frame: number) => {
+                const found = await options.resolveSmartMask?.(clip.id, frame);
+                return found ?? null;
+              },
+            }
+          : {}),
         resolveReplacement: async (assetId, clip, frame) => {
           const asset = request.project.mediaAssets[assetId as MediaAssetId];
           if (!asset) return null;

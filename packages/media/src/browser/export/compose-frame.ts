@@ -13,8 +13,12 @@ import {
   isRegionalBlurEffect,
   libraryEffectClipPath,
   libraryEffectTransform,
+  lumaOfRgb,
+  refineSmartBackground,
+  smartBackgroundOf,
   textClipAnimationFrame,
   type ActiveVideoClip,
+  type AlphaMask,
   type BlurVideoEffect,
   type Clip,
   type ClipText,
@@ -27,6 +31,7 @@ import {
   type PixelEffectsRenderer,
   type PixelReplacement,
 } from '../effects/pixel-effects';
+import { paintSmartMaskedFrame } from '../effects/smart-mask';
 
 /** Position, anchor, rotation, and scale. Anchor 0 keeps the previous centre pivot. */
 function applyClipMotion(
@@ -274,6 +279,7 @@ export interface PixelEffectsContext {
   readonly tracking: Map<string, PixelTracking>;
   /** Replacement picture for a Screen Replace source at this sequence frame. */
   readonly resolveReplacement: (assetId: string, clip: Clip, sequenceFrame: number) => Promise<PixelReplacement | null>;
+  readonly resolveSmartMask?: (clip: Clip, sequenceFrame: number) => Promise<AlphaMask | null>;
 }
 
 const scratchCanvases: HTMLCanvasElement[] = [];
@@ -327,10 +333,19 @@ async function processPixels(
     frame: sequenceFrame,
     tracking,
   });
-  if (!out) return source;
+  const picture = out ?? base.canvas;
   const copy = scratch(1, w, h);
   if (!copy) return source;
-  copy.drawImage(out, 0, 0);
+  copy.drawImage(picture, 0, 0);
+  const smart = smartBackgroundOf(clip.effects.video);
+  if (smart && pixel.resolveSmartMask) {
+    const raw = await pixel.resolveSmartMask(clip, sequenceFrame);
+    if (raw) {
+      const pixels = copy.getImageData(0, 0, w, h);
+      const refined = refineSmartBackground(raw, lumaOfRgb(pixels.data, w, h), smart);
+      paintSmartMaskedFrame(copy, picture, refined, w, h, smart.view, smart.split);
+    }
+  }
   const canvas = copy.canvas;
   return { width: w, height: h, draw: (target, x, y, dx, dy) => target.drawImage(canvas, x, y, dx, dy) };
 }

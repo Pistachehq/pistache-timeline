@@ -5,13 +5,14 @@ import { commandLabel, DEFAULT_KEYMAP, getCommand, type CommandId } from '../../
 import { formatChord } from '../../commands/keymap';
 import { useRuntime } from '../../runtime/context';
 
-type TopicId = 'start' | 'editing' | 'effects' | 'keying' | 'audio' | 'export' | 'shortcuts';
+type TopicId = 'start' | 'editing' | 'effects' | 'keying' | 'rotoscope' | 'audio' | 'export' | 'shortcuts';
 
 const TOPICS: readonly { readonly id: TopicId; readonly label: string }[] = [
   { id: 'start', label: 'Getting started' },
   { id: 'editing', label: 'Editing' },
   { id: 'effects', label: 'Effects & transitions' },
   { id: 'keying', label: 'Green screen' },
+  { id: 'rotoscope', label: 'Smart background' },
   { id: 'audio', label: 'Audio' },
   { id: 'export', label: 'Export' },
   { id: 'shortcuts', label: 'Keyboard shortcuts' },
@@ -218,6 +219,43 @@ function TopicBody({ topic }: { readonly topic: TopicId }) {
             <p>Removes dark areas, or bright ones with the invert option. Useful for fire, smoke and light-leak overlays.</p>
           </Section>
           <Tip>Keying effects can be combined, for example Screen Replace on a phone plus Chroma Key on the background.</Tip>
+        </div>
+      );
+    case 'rotoscope':
+      return (
+        <div className="space-y-4">
+          <Section title="Smart Background Removal">
+            <p>
+              Use this when there is no green screen and you need to keep specific objects and surfaces, such as a rover
+              and the floor, while removing a curtain and walls. It is not a chroma key.
+            </p>
+            <Steps
+              items={[
+                'Drag Video effects → AI & Intelligent Tools → Smart Background Removal onto a video or image clip.',
+                'In Keep, describe what must remain, for example “rover, wheels, floor, shadows under the rover”.',
+                'In Remove, describe what should become transparent, for example “white curtain, walls”.',
+                'Click Keep point and click those objects in the Program monitor. Use Remove point for the curtain.',
+                'Choose Detect subjects for a first pass, then correct with boxes or the keep/remove brushes.',
+                'Track forward or Analyse entire clip so the mask follows motion. Place a background on a lower track.',
+              ]}
+            />
+          </Section>
+          <Section title="What this build does">
+            <p>
+              Text uses CLIPSeg only to find candidate regions (Apache-2.0). SlimSAM then cuts those objects, plus your
+              clicks and boxes. The keep mask is hardened to fully opaque or fully transparent except at the edge.
+              Between analysed frames the mask is warped with optical flow, then re-thresholded so interpolation cannot
+              ghost the background. Models stay on this machine. Nothing is uploaded.
+            </p>
+            <p>
+              SAM 2 video object tracking, a separate Python GPU worker, and cloud inference are not included. If a
+              model cannot run, Timeline reports the error instead of falling back to a fake colour key.
+            </p>
+          </Section>
+          <Tip>
+            Contact-shadow preservation expands the keep mask into dark pixels next to a kept surface. It does not paint
+            new shadows.
+          </Tip>
         </div>
       );
     case 'audio':

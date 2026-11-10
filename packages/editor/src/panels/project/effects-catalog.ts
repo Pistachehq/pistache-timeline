@@ -2,6 +2,7 @@ import {
   AUDIO_EFFECT_DEFAULTS,
   defaultChromaKey,
   defaultScreenReplace,
+  defaultSmartBackground,
   KEY_COLOR_PRESETS,
   type AudioFadeCurve,
   type AudioEffect,
@@ -45,7 +46,7 @@ export const EFFECT_CATEGORIES: readonly EffectCategory[] = [
   {
     id: 'video-effects',
     name: 'Video effects',
-    description: 'Keying, screen replace, blur, color, sharpen, and vignette.',
+    description: 'Keying, screen replace, smart background removal, blur, color, sharpen, and vignette.',
   },
   {
     id: 'audio-transitions',
@@ -150,6 +151,7 @@ const CORE_EFFECT_LIBRARY: readonly EffectLibraryEntry[] = [
   videoFx('chroma-blue', defaultChromaKey(KEY_COLOR_PRESETS.blue), 'Chroma Key (blue screen)', 'Keying'),
   videoFx('screen-replace', defaultScreenReplace(KEY_COLOR_PRESETS.green), 'Screen Replace', 'Keying'),
   videoFx('luma-key', { kind: 'luma-key', threshold: 15, softness: 10, invert: false }, 'Luma Key', 'Keying'),
+  videoFx('smart-background', defaultSmartBackground(''), 'Smart Background Removal', 'AI & Intelligent Tools'),
 
   audioTransition('constant-power', 'Constant power'),
   audioTransition('linear', 'Linear fade'),

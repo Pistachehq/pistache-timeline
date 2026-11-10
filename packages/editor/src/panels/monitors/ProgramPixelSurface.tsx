@@ -3,18 +3,26 @@ import {
   cssBlurFilter,
   framesToSeconds,
   insetClipPathFromRegion,
+  lumaOfRgb,
+  refineSmartBackground,
+  smartBackgroundOf,
   type BlurVideoEffect,
   type Clip,
   type Sequence,
   type MediaAssetId,
 } from '@timeline/core';
 import {
+  paintSmartMaskedFrame,
   PixelEffectsRenderer,
   PixelTracking,
   replacementAssetIds,
   replacementTimeSeconds,
   type PixelReplacement,
 } from '@timeline/media';
+import { type SmartPickMode } from '../../state/ui-store';
+import { clipSourceFrame } from '../../segmentation/analyze-clip';
+import { captureAndInfer, maskForClipFrame } from '../../segmentation/ensure-mask';
+import { hydrateMaskCache, subscribeMaskCache } from '../../segmentation/mask-cache';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, type PointerEvent as ReactPointerEvent } from 'react';
 import { useMediaState, useProjectState, useRuntime } from '../../runtime/context';
 
@@ -64,6 +72,10 @@ export function ProgramPixelSurface({
   regionalBlur,
   picking,
   onPick,
+  smartPick,
+  onSmartPoint,
+  onSmartBox,
+  onSmartStroke,
 }: {
   readonly clip: Clip;
   readonly sequence: Sequence;
@@ -79,11 +91,18 @@ export function ProgramPixelSurface({
   readonly regionalBlur: BlurVideoEffect | null;
   readonly picking: boolean;
   readonly onPick: (u: number, v: number) => void;
+  readonly smartPick: SmartPickMode | null;
+  readonly onSmartPoint: (u: number, v: number) => void;
+  readonly onSmartBox: (u: number, v: number, w: number, h: number) => void;
+  readonly onSmartStroke: (points: readonly { u: number; v: number }[], include: boolean) => void;
 }) {
   // The `playhead` prop only changes when the picture layers change during playback,
   // so per-frame work reads the playback clock directly.
   const playbackStore = useRuntime().stores.playback;
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const plateRef = useRef<HTMLCanvasElement | null>(null);
+  const inferring = useRef(false);
+  const gesture = useRef<{ u: number; v: number; points: { u: number; v: number }[] } | null>(null);
   const sourceNode = useRef<HTMLVideoElement | HTMLImageElement | null>(null);
   const replacementNodes = useRef(new Map<string, HTMLVideoElement | HTMLImageElement>());
   const tracking = useRef(new PixelTracking());
@@ -163,6 +182,32 @@ export function ProgramPixelSurface({
     const picture = out ?? source;
     ctx.filter = 'none';
     ctx.drawImage(picture, 0, 0, w, h);
+    const smart = smartBackgroundOf(state.clip.effects.video);
+    if (smart && smart.view !== 'original') {
+      const sourceFrame = clipSourceFrame(state.clip, playbackStore.getState().playhead);
+      const cached = maskForClipFrame(smart, sourceFrame);
+      if (cached) {
+        plateRef.current ??= document.createElement('canvas');
+        const plate = plateRef.current;
+        if (plate.width !== w || plate.height !== h) {
+          plate.width = w;
+          plate.height = h;
+        }
+        const plateCtx = plate.getContext('2d');
+        plateCtx?.drawImage(canvas, 0, 0);
+        const luma = plateCtx ? lumaOfRgb(plateCtx.getImageData(0, 0, w, h).data, w, h) : null;
+        paintSmartMaskedFrame(ctx, plate, refineSmartBackground(cached, luma, smart), w, h, smart.view, smart.split);
+      } else if (!inferring.current && (source instanceof HTMLVideoElement ? source.readyState >= 2 : true)) {
+        inferring.current = true;
+        const abort = new AbortController();
+        void captureAndInfer(source, width, height, smart, sourceFrame, abort.signal, () => undefined)
+          .catch(() => undefined)
+          .finally(() => {
+            inferring.current = false;
+            dirty.current = true;
+          });
+      }
+    }
     const blur = state.regionalBlur;
     const blurFilter = blur ? cssBlurFilter(blur.amount, state.frameHeight / BLUR_REFERENCE_HEIGHT) : undefined;
     if (blur?.region && blurFilter) {
@@ -266,6 +311,16 @@ export function ProgramPixelSurface({
     tracking.current.reset();
   }, [clip.id]);
 
+  useEffect(() => subscribeMaskCache(() => {
+    dirty.current = true;
+  }), []);
+
+  const smartCacheId = smartBackgroundOf(clip.effects.video)?.cacheId ?? '';
+  useEffect(() => {
+    if (!smartCacheId) return;
+    void hydrateMaskCache(smartCacheId);
+  }, [smartCacheId]);
+
   const bindReplacement = useCallback(
     (assetId: string) => (node: HTMLVideoElement | HTMLImageElement | null) => {
       const map = replacementNodes.current;
@@ -293,19 +348,66 @@ export function ProgramPixelSurface({
     [],
   );
 
-  const onPointerDown = (event: ReactPointerEvent<HTMLCanvasElement>) => {
-    if (!picking || event.button !== 0) return;
-    event.preventDefault();
-    event.stopPropagation();
+  const unitOf = (event: ReactPointerEvent<HTMLCanvasElement>) => {
     const target = event.currentTarget;
     const u = target.clientWidth > 0 ? event.nativeEvent.offsetX / target.clientWidth : 0.5;
     const v = target.clientHeight > 0 ? event.nativeEvent.offsetY / target.clientHeight : 0.5;
-    onPick(Math.min(1, Math.max(0, u)), Math.min(1, Math.max(0, v)));
+    return { u: Math.min(1, Math.max(0, u)), v: Math.min(1, Math.max(0, v)) };
+  };
+
+  const onPointerDown = (event: ReactPointerEvent<HTMLCanvasElement>) => {
+    if (event.button !== 0) return;
+    if (smartPick) {
+      event.preventDefault();
+      event.stopPropagation();
+      event.currentTarget.setPointerCapture(event.pointerId);
+      const at = unitOf(event);
+      gesture.current = { ...at, points: [at] };
+      if (smartPick === 'include' || smartPick === 'exclude') onSmartPoint(at.u, at.v);
+      return;
+    }
+    if (!picking) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const at = unitOf(event);
+    onPick(at.u, at.v);
+  };
+
+  const onPointerMove = (event: ReactPointerEvent<HTMLCanvasElement>) => {
+    const g = gesture.current;
+    if (!g || !smartPick) return;
+    const at = unitOf(event);
+    if (smartPick === 'brush-add' || smartPick === 'brush-subtract') g.points.push(at);
+  };
+
+  const onPointerUp = (event: ReactPointerEvent<HTMLCanvasElement>) => {
+    const g = gesture.current;
+    gesture.current = null;
+    if (!g || !smartPick) return;
+    const at = unitOf(event);
+    if (smartPick === 'box-include' || smartPick === 'box-exclude') {
+      const u = Math.min(g.u, at.u);
+      const v = Math.min(g.v, at.v);
+      onSmartBox(u, v, Math.max(0.004, Math.abs(at.u - g.u)), Math.max(0.004, Math.abs(at.v - g.v)));
+    } else if (smartPick === 'brush-add' || smartPick === 'brush-subtract') {
+      onSmartStroke(g.points.length > 0 ? g.points : [at], smartPick === 'brush-add');
+    }
   };
 
   const hiddenClass = 'pointer-events-none absolute inset-0 h-full w-full object-fill opacity-0';
+  const smartView = smartBackgroundOf(clip.effects.video)?.view;
+  const checker =
+    smartView === 'result' || smartView === 'split'
+      ? {
+          backgroundColor: '#2a2a2a',
+          backgroundImage:
+            'linear-gradient(45deg,#3a3a3a 25%,transparent 25%),linear-gradient(-45deg,#3a3a3a 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#3a3a3a 75%),linear-gradient(-45deg,transparent 75%,#3a3a3a 75%)',
+          backgroundPosition: '0 0,0 8px,8px -8px,-8px 0',
+          backgroundSize: '16px 16px',
+        }
+      : undefined;
   return (
-    <div className="relative h-full w-full">
+    <div className="relative h-full w-full" style={checker}>
       {isImage ? (
         <img ref={bindSource} src={url} alt="" draggable={false} className={hiddenClass} decoding="async" />
       ) : (
@@ -331,8 +433,11 @@ export function ProgramPixelSurface({
         ref={canvasRef}
         data-key-surface={clip.id}
         onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
         className={
-          picking
+          picking || smartPick
             ? 'pointer-events-auto absolute inset-0 h-full w-full cursor-crosshair'
             : 'pointer-events-none absolute inset-0 h-full w-full'
         }

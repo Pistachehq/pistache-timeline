@@ -13,7 +13,7 @@ import {
   type ClipId,
   type Sequence,
 } from '@timeline/core';
-import { clamp } from '@timeline/shared';
+import { clamp, createId } from '@timeline/shared';
 import {
   useCallback,
   useEffect,
@@ -35,6 +35,7 @@ import {
   useSelectionState,
   useUiState,
 } from '../../runtime/context';
+import { clipSourceFrame } from '../../segmentation/analyze-clip';
 import {
   applyProgramClipStyle,
   hitTestProgramClipAt,
@@ -300,6 +301,9 @@ function CompositeLayer({
   const isImage = asset?.kind === 'image';
   const pixelMode = hasPixelVideoEffects(clip.effects.video);
   const keyPick = useUiState((s) => (s.keyColorPick?.clipId === clip.id ? s.keyColorPick : null));
+  const smartPick = useUiState((s) =>
+    s.smartBackgroundPick?.clipId === clip.id ? s.smartBackgroundPick : null,
+  );
   const sourceEl = useRef<HTMLVideoElement | HTMLImageElement | null>(null);
   const runtime = useRuntime();
 
@@ -326,6 +330,73 @@ function CompositeLayer({
       runtime.actions.edit.setClipEffects(clip.id, { ...clip.effects, video }, 'Pick Key Color');
     },
     [clip, runtime],
+  );
+
+  const patchSmart = useCallback(
+    (mutate: (effect: Extract<Clip['effects']['video'][number], { kind: 'smart-background' }>) => typeof effect, label: string) => {
+      const pick = runtime.stores.ui.getState().smartBackgroundPick;
+      if (!pick) return;
+      const effect = clip.effects.video[pick.effectIndex];
+      if (!effect || effect.kind !== 'smart-background') return;
+      const next = mutate(effect);
+      const video = clip.effects.video.map((item, index) => (index === pick.effectIndex ? next : item));
+      runtime.actions.edit.setClipEffects(clip.id, { ...clip.effects, video }, label);
+    },
+    [clip, runtime],
+  );
+
+  const sourceFrameNow = () => clipSourceFrame(clip, playheadRef.current);
+
+  const onSmartPoint = useCallback(
+    (u: number, v: number) => {
+      const pick = runtime.stores.ui.getState().smartBackgroundPick;
+      if (!pick) return;
+      patchSmart(
+        (effect) => ({
+          ...effect,
+          points: [
+            ...effect.points,
+            { id: createId('pt'), u, v, include: pick.mode !== 'exclude', sourceFrame: sourceFrameNow() },
+          ],
+        }),
+        pick.mode === 'exclude' ? 'Exclude Region' : 'Keep Region',
+      );
+    },
+    [patchSmart, runtime],
+  );
+
+  const onSmartBox = useCallback(
+    (u: number, v: number, w: number, h: number) => {
+      const pick = runtime.stores.ui.getState().smartBackgroundPick;
+      if (!pick) return;
+      patchSmart(
+        (effect) => ({
+          ...effect,
+          boxes: [
+            ...effect.boxes,
+            { id: createId('bx'), u, v, w, h, include: pick.mode !== 'box-exclude', sourceFrame: sourceFrameNow() },
+          ],
+        }),
+        'Keep Region Box',
+      );
+    },
+    [patchSmart, runtime],
+  );
+
+  const onSmartStroke = useCallback(
+    (points: readonly { u: number; v: number }[], include: boolean) => {
+      patchSmart(
+        (effect) => ({
+          ...effect,
+          strokes: [
+            ...effect.strokes,
+            { id: createId('sk'), include, radius: 0.02, sourceFrame: sourceFrameNow(), points: points.slice(0, 256) },
+          ],
+        }),
+        include ? 'Paint Keep Mask' : 'Paint Remove Mask',
+      );
+    },
+    [patchSmart],
   );
 
   const mediaW = asset?.resolution?.width ?? 0;
@@ -463,6 +534,10 @@ function CompositeLayer({
         regionalBlur={regionalBlur}
         picking={keyPick !== null && !hidden}
         onPick={pickColor}
+        smartPick={smartPick && !hidden ? smartPick.mode : null}
+        onSmartPoint={onSmartPoint}
+        onSmartBox={onSmartBox}
+        onSmartStroke={onSmartStroke}
       />
     );
   } else if (regionalBlur && blurFilter && maskPath && regionalBlur.region) {
@@ -692,6 +767,7 @@ export function ProgramCompositeLayers({ sequence }: { readonly sequence: Sequen
 
   const tool = useUiState((s) => s.tool);
   const keyColorPick = useUiState((s) => s.keyColorPick);
+  const smartBackgroundPick = useUiState((s) => s.smartBackgroundPick);
 
   const dragRef = useRef<{
     clipId: ClipId;
@@ -714,6 +790,13 @@ export function ProgramCompositeLayers({ sequence }: { readonly sequence: Sequen
       event.stopPropagation();
       runtime.stores.ui.getState().setKeyColorPick(null);
       runtime.stores.ui.getState().notify('Click on the clip itself to pick the key color.', 'warning');
+      return;
+    }
+    if (smartBackgroundPick) {
+      event.preventDefault();
+      event.stopPropagation();
+      runtime.stores.ui.getState().setSmartBackgroundPick(null);
+      runtime.stores.ui.getState().notify('Click on the clip itself to edit the keep mask.', 'warning');
       return;
     }
     const frame = outerRef.current;
@@ -815,7 +898,7 @@ export function ProgramCompositeLayers({ sequence }: { readonly sequence: Sequen
     <div
       ref={outerRef}
         className={
-          keyColorPick
+          keyColorPick || smartBackgroundPick
             ? 'absolute inset-0 cursor-crosshair overflow-hidden'
             : tool === 'text' || tool === 'speech'
               ? 'absolute inset-0 cursor-text overflow-hidden'
@@ -884,7 +967,7 @@ export function ProgramCompositeLayers({ sequence }: { readonly sequence: Sequen
           zIndex={(selectedStackIndex + 1) * LAYER_Z + 21}
         />
       ) : null}
-      {selectedId && selectedStackIndex >= 0 && !cropEditId && !blurEditId && !keyColorPick ? (
+      {selectedId && selectedStackIndex >= 0 && !cropEditId && !blurEditId && !keyColorPick && !smartBackgroundPick ? (
         <ProgramTransformOverlay
           sequence={sequence}
           frameRef={outerRef}

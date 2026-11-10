@@ -22,6 +22,7 @@ export {
   type PixelReplacement,
   type PixelSource,
 } from './browser/effects/pixel-effects';
+export { paintSmartMaskedFrame, toAlphaMask, type SmartMaskView } from './browser/effects/smart-mask';
 export {
   audioChainKey,
   buildAudioEffectChain,
